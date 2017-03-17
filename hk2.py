@@ -38,9 +38,10 @@ def idtanh(x):
 # main homeostasis, homeokinesis class based on smp_thread_ros
 class LPZRos(smp_thread_ros):
     modes = {"hs": 0, "hk": 1, "eh_pi_d": 2}
-    def __init__(self, mode="hs", loop_time = 0.05):
+    def __init__(self, mode="hs", loop_time = 1./20):
         pubs = {
             "/cmd_vel": [Twist,],
+            "/cmd_vel_raw": [Twist,],
             "/set_color": [ColorRGBA,],
             "/lpzros/x": [Float32MultiArray]
             }
@@ -48,6 +49,7 @@ class LPZRos(smp_thread_ros):
             "/imu": [Imu, self.cb_imu],
             "/odom": [Odometry, self.cb_odom],
             }
+        print "loop_time", loop_time
         smp_thread_ros.__init__(self, loop_time = loop_time, pubs = pubs, subs = subs)
         # self.name = "lpzros"
         self.mode = LPZRos.modes[mode]
@@ -87,27 +89,32 @@ class LPZRos(smp_thread_ros):
 
         ############################################################
         # model + meta params
-        self.numsen_raw = 8 # 5 # 2
-        self.numsen = 8 # 5 # 2
+        self.numsen_raw = 10 # 8 # 5 # 2
+        self.numsen = 10 # 8 # 5 # 2
         self.nummot = 2
-        self.imu_lin_acc_gain = 0 # 1e-3
-        self.imu_gyrosco_gain = 1e-2
+        self.imu_lin_acc_gain = 0 # 1e-1
+        self.imu_gyrosco_gain = 1e-1
         self.imu_orienta_gain = 0 # 1e-1
-        self.linear_gain      = 0.0 # 1e-1
-        self.output_gain = 120
+        self.linear_gain      = 0 # 1.0 # 1e-1
+        self.pos_gain         = 0 # 1e-2
+        self.output_gain = 255 # 120 # 120
         
         # sphero lag is 4 timesteps
         self.lag = 1 # 2
         # buffer size accomodates causal minimum 1 + lag time steps
         self.bufsize = 1 + self.lag # 2
-        self.creativity = 0.05
-        #self.epsA = 0.1
-        self.epsA = 0.02
-        # self.epsA = 0.001
+        self.creativity = 0.2
+        # self.epsA = 0.1
+        # self.epsA = 0.02
+        self.epsA = 0.001
+        # self.epsC = 0.001
         # self.epsC = 0.001
         # self.epsC = 0.01
         # self.epsC = 0.1
         self.epsC = 0.5
+        # self.epsC = 0.9
+        # self.epsC = 1.0
+        # self.epsC = 2.0
 
         ############################################################
         # forward model
@@ -275,9 +282,9 @@ class LPZRos(smp_thread_ros):
         print "xsi =", xsi
         
         # forward model learning
-        self.A += self.epsA * np.dot(xsi, y.T) + (self.A * -0.003) * 0.1
+        self.A += self.epsA * np.dot(xsi, y.T) + (self.A * -0.0003) # * 0.1
         # self.A += self.epsA * np.dot(xsi, np.atleast_2d(self.y[:,0])) + (self.A * -0.003) * 0.1
-        self.b += self.epsA * xsi              + (self.b * -0.001) * 0.1
+        self.b += self.epsA * xsi              + (self.b * -0.0001) # * 0.1
 
         # print "A", self.cnt, self.A
         # print "b", self.b
@@ -322,10 +329,10 @@ class LPZRos(smp_thread_ros):
             # self.C +=
 
         # FIXME: ???
-        # self.h += np.clip(dh, -.1, .1)
-        # self.C += np.clip(dC, -.1, .1)
-        self.h += np.clip(dh, -10, 10)
-        self.C += np.clip(dC, -10, 10)
+        self.h += np.clip(dh, -.1, .1)
+        self.C += np.clip(dC, -.1, .1)
+        # self.h += np.clip(dh, -10, 10)
+        # self.C += np.clip(dC, -10, 10)
 
         # print "C", self.C
         # print "h", self.h
@@ -340,20 +347,26 @@ class LPZRos(smp_thread_ros):
         #     sys.exit(0)
 
     def prepare_inputs(self):
-        inputs = (self.odom.twist.twist.linear.x,self.odom.twist.twist.linear.y,
+        inputs = (self.odom.twist.twist.linear.x * self.linear_gain, self.odom.twist.twist.linear.y * self.linear_gain,
                          self.imu_vec[0] * self.imu_lin_acc_gain,
                          self.imu_vec[1] * self.imu_lin_acc_gain,
                          self.imu_vec[2] * self.imu_lin_acc_gain,
                          self.imu_vec[3] * self.imu_gyrosco_gain,
                          self.imu_vec[4] * self.imu_gyrosco_gain,
-                         self.imu_vec[5] * self.imu_gyrosco_gain)
+                         self.imu_vec[5] * self.imu_gyrosco_gain,
+                         self.odom.pose.pose.position.x * self.pos_gain,
+                         self.odom.pose.pose.position.y * self.pos_gain,
+                         )
         return inputs
 
     def prepare_output(self):
-        self.motors.linear.x = self.y[0,0] * self.output_gain
-        self.motors.linear.y = self.y[1,0] * self.output_gain
+        # self.motors.linear.x = self.y[0,0] * self.output_gain
+        # self.motors.linear.y = self.y[1,0] * self.output_gain
+        # self.pub["_cmd_vel"].publish(self.motors)
+        self.motors.linear.x  = self.y[1,0] * self.output_gain * 1.414
+        self.motors.angular.z = self.y[0,0] * 1 # self.output_gain
+        self.pub["_cmd_vel_raw"].publish(self.motors)
         print "y = %s , motors = %s" % (self.y, self.motors)
-        self.pub["_cmd_vel"].publish(self.motors)
                             
     def run(self):
         """LPZRos run method overwriting smp_thread_ros"""
@@ -386,7 +399,7 @@ class LPZRos(smp_thread_ros):
             # print "%s.run isrunning %d" % (self.__class__.__name__, self.isrunning) 
             
             # check if finished
-            if self.cnt_main == 1000: # self.cfg.len_episode:
+            if self.cnt_main == 100000: # self.cfg.len_episode:
                 # self.savelogs()
                 self.isrunning = False
                 # generates problem with batch mode
@@ -398,8 +411,8 @@ class LPZRos(smp_thread_ros):
 if __name__ == "__main__":
     import signal
     parser = argparse.ArgumentParser(description="lpzrobots ROS controller: test homeostatic/kinetic learning")
-    parser.add_argument("-m", "--mode", type=str, help="select mode [hs] from " + str(LPZRos.modes), default = "hs")
-    # parser.add_argument("-m", "--mode", type=int, help="select mode: ")
+    parser.add_argument("-m",  "--mode",      type=str, help="select mode [hs] from " + str(LPZRos.modes), default = "hs")
+    parser.add_argument("-lt", "--loop_time", type=float, help="loop time [1./20]", default=1./20)
     args = parser.parse_args()
 
     # sanity check
@@ -407,7 +420,7 @@ if __name__ == "__main__":
         print "invalid mode string, use one of " + str(LPZRos.modes)
         sys.exit(0)
     
-    lpzros = LPZRos(args.mode)
+    lpzros = LPZRos(args.mode, loop_time = args.loop_time)
 
     def handler(signum, frame):
         print 'Signal handler called with signal', signum

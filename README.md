@@ -17,6 +17,9 @@ installed (tested only on Ubuntu)
 -   sphero\_ros driver from <sup><a id="fnr.2" class="footref" href="#fn.2">2</a></sup>, install via $ROSDISTRO\_workspace
     catkin\_make. See the ROS wiki how to set up a catkin workspace.
 -   get smp\_msgs <sup><a id="fnr.3" class="footref" href="#fn.3">3</a></sup> and install it into your ROS workspace
+-   get smp\_base from <https://github.com/x75/smp_base>, then do
+
+    export PYTHONPATH=../smp_base:$PYTHONPATH
 
 This is the launch sequence for the sphero ROS node
 
@@ -147,6 +150,18 @@ disentangle possible sources of errors.
 <td class="org-left">sphero\_data\_recorder.py</td>
 <td class="org-left">&#xa0;</td>
 </tr>
+
+
+<tr>
+<td class="org-left">hk2.py</td>
+<td class="org-left">Homeostasis and homeokinesis from lpzrobots,</td>
+</tr>
+
+
+<tr>
+<td class="org-left">&#xa0;</td>
+<td class="org-left">Der & Martius, 201, Playful machines</td>
+</tr>
 </tbody>
 </table>
 
@@ -154,6 +169,10 @@ disentangle possible sources of errors.
 
 You can copy the default.cfg and start editing it to play around with
 different targets and parameters.
+
+Or try the homeokinesis example and play with self.\*\_gain parameters (in the code)
+
+    python hk2.py --mode hk --loop_time 0.05
 
 
 # Footnotes

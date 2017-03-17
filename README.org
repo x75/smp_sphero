@@ -18,6 +18,8 @@ installed (tested only on Ubuntu)
   - sphero_ros driver from [fn:1], install via $ROSDISTRO_workspace
     catkin_make. See the ROS wiki how to set up a catkin workspace.
   - get smp_msgs [fn:3] and install it into your ROS workspace
+  - get smp_base from https://github.com/x75/smp_base, then do
+: export PYTHONPATH=../smp_base:$PYTHONPATH
 
 This is the launch sequence for the sphero ROS node
 
@@ -58,34 +60,41 @@ like e.g. sphero_joystick.py
 
 A few of the utils/tests to check the basic communication is working
 
- |----------------------------------+--------------------------------------------|
- | *Utils*                          |                                            |
- |----------------------------------+--------------------------------------------|
- | bluerssi.py                      | Log BT rssi values                         |
- | sphero_colors.py                 | Basic color actuation with ros             |
- | sphero_joystick.py               | Control sphero via ros joy_node            |
- | sphero_raw.py                    | Minimal test of raw communication protocol |
- | sphero_simple_openloop.py        | Simple open-loop command test              |
- | sphero_test.py                   | Another minimal test                       |
+ |---------------------------+----------------------------------------------|
+ | *Utils*                   |                                              |
+ |---------------------------+----------------------------------------------|
+ | bluerssi.py               | Log BT rssi values                           |
+ | sphero_colors.py          | Basic color actuation with ros               |
+ | sphero_joystick.py        | Control sphero via ros joy_node              |
+ | sphero_raw.py             | Minimal test of raw communication protocol   |
+ | sphero_simple_openloop.py | Simple open-loop command test                |
+ | sphero_test.py            | Another minimal test                         |
 
 *** Learning
 
 When that works, you could try the learning experiments, just to
 disentangle possible sources of errors.
 
- |----------------------------------+--------------------------------------------|
- | *Experiments*                    |                                            |
- |----------------------------------+--------------------------------------------|
- | sphero_res_learner_1D.py         |                                            |
- | sphero_res_learner_2D_polar.py   |                                            |
- | sphero_res_learner_2D.py         |                                            |
- | sphero_res_learner_1D_analyze.py |                                            |
- | sphero_data_recorder.py          |                                            |
+ |----------------------------------+----------------------------------------------|
+ | *Experiments*                    |                                              |
+ |----------------------------------+----------------------------------------------|
+ | sphero_res_learner_1D.py         |                                              |
+ | sphero_res_learner_2D_polar.py   |                                              |
+ | sphero_res_learner_2D.py         |                                              |
+ | sphero_res_learner_1D_analyze.py |                                              |
+ | sphero_data_recorder.py          |                                              |
+ | hk2.py                           | Homeostasis and homeokinesis from lpzrobots, |
+ |                                  | Der & Martius, 201, Playful machines         |
+
 
 : python sphero_res_learner_1D.py --config default.cfg
 
 You can copy the default.cfg and start editing it to play around with
 different targets and parameters.
+
+Or try the homeokinesis example and play with self.*_gain parameters (in the code)
+
+: python hk2.py --mode hk --loop_time 0.05
 
 * Footnotes
 
