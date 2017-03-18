@@ -34,51 +34,49 @@ def dtanh(x):
 def idtanh(x):
     return 1./dtanh(x) # hm?    
 
+def get_cb_dict(func):
+    return {"func": func, "cnt": 0}
+    
 ################################################################################
-# main homeostasis, homeokinesis class based on smp_thread_ros
-class LPZRos(smp_thread_ros):
-    modes = {"hs": 0, "hk": 1, "eh_pi_d": 2}
-    def __init__(self, mode="hs", loop_time = 1./20):
-        pubs = {
+# robot classes
+class robot(object):
+    def __init__(self, ref):
+        self.ref = ref
+        self.cb   = {}
+        self.pubs = {}
+        self.subs = {
+            "/sensors_exp": [Float64MultiArray,]
+            }
+        self.lag = 1
+        
+    def get_pubsub(self):
+        """return pubs and subs dicts as tuple"""
+        return (self.pubs, self.subs)
+    
+class robotSphero(robot):
+    def __init__(self, ref):
+        robot.__init__(self, ref)
+        self.pubs = {
             "/cmd_vel": [Twist,],
             "/cmd_vel_raw": [Twist,],
             "/set_color": [ColorRGBA,],
             "/lpzros/x": [Float32MultiArray]
             }
-        subs = {
-            "/imu": [Imu, self.cb_imu],
-            "/odom": [Odometry, self.cb_odom],
+        self.cb = {
+            "/imu": get_cb_dict(self.cb_imu),
+            "/odom": get_cb_dict(self.cb_odom),
             }
-        print "loop_time", loop_time
-        smp_thread_ros.__init__(self, loop_time = loop_time, pubs = pubs, subs = subs)
-        # self.name = "lpzros"
-        self.mode = LPZRos.modes[mode]
-        self.cnt = 0
-        ############################################################
-        # # ros stuff
-        # if False:
-        #     rospy.init_node(self.name)
-        #     # pub=rospy.Publisher("/motors", Float64MultiArray, queue_size=1)
-        #     self.sub = {}
-        #     self.pub = {}
-        #     self.sub["imu"] = rospy.Subscriber("/imu",
-        #                                     Imu, self.cb_imu)
-        #     self.sub["odom"] = rospy.Subscriber("/odom",
-        #                                     Odometry, self.cb_odom)
-        #     self.pub["twist"] = rospy.Publisher("/cmd_vel", Twist)
-        #     self.pub["color"] = rospy.Publisher("/set_color", ColorRGBA)
         
-        # self.pub["target"] = rospy.Publisher("/learner/target", reservoir)
-        # self.pub["learn_zn"] = rospy.Publisher("/learner/zn", reservoir)
+        self.subs = {
+            "/imu": [Imu, self.cb["/imu"]["func"]],
+            "/odom": [Odometry, self.cb["/odom"]["func"]],
+            }
+        # custom
+        self.numsen_raw = 10 # 8 # 5 # 2
+        self.numsen     = 10 # 8 # 5 # 2
         
-        # self.pub_motors  = rospy.Publisher("/motors", Float64MultiArray, queue_size = 2)
-        # self.sub_sensor = rospy.Subscriber("/sensors", Float64MultiArray, self.cb_sensors)
-        # self.pub_sensor_exp = rospy.Publisher("/sensors_exp", Float64MultiArray, queue_size = 2)
-        # pub=rospy.Publisher("/chatter", Float64MultiArray)
-    
-        self.cb_imu_cnt = 0
-        self.cb_odom_cnt = 0
-
+        self.imu  = Imu()
+        self.odom = Odometry()
         # sphero color
         self.color = ColorRGBA()
         self.motors = Twist()
@@ -87,11 +85,6 @@ class LPZRos(smp_thread_ros):
         self.msg_motors     = Float64MultiArray()
         self.msg_sensor_exp = Float64MultiArray()
 
-        ############################################################
-        # model + meta params
-        self.numsen_raw = 10 # 8 # 5 # 2
-        self.numsen = 10 # 8 # 5 # 2
-        self.nummot = 2
         self.imu_lin_acc_gain = 0 # 1e-1
         self.imu_gyrosco_gain = 1e-1
         self.imu_orienta_gain = 0 # 1e-1
@@ -101,12 +94,121 @@ class LPZRos(smp_thread_ros):
         
         # sphero lag is 4 timesteps
         self.lag = 1 # 2
+        
+    def cb_imu(self, msg):
+        """ROS IMU callback: use odometry and incoming imu data to trigger
+        sensorimotor loop execution"""
+        # print "imu", msg
+        # FIXME: do the averaging here
+        self.imu = msg
+        imu_vec_acc = np.array((self.imu.linear_acceleration.x, self.imu.linear_acceleration.y, self.imu.linear_acceleration.z))
+        imu_vec_gyr = np.array((self.imu.angular_velocity.x, self.imu.angular_velocity.y, self.imu.angular_velocity.z))
+        (r, p, y) = tf.transformations.euler_from_quaternion([self.imu.orientation.x, self.imu.orientation.y, self.imu.orientation.z, self.imu.orientation.w])
+        imu_vec_ori = np.array((r, p, y))
+        imu_vec_ = np.hstack((imu_vec_acc, imu_vec_gyr, imu_vec_ori)).reshape(self.imu_vec.shape)
+        self.imu_vec = self.imu_vec * self.imu_smooth + (1 - self.imu_smooth) * imu_vec_
+        # print "self.imu_vec", self.imu_vec
+
+        self.cb["/imu"]["cnt"] += 1
+        
+    def cb_odom(self, msg):
+        """ROS odometry callback, copy incoming data into local memory"""
+        # print type(msg)
+        self.odom = msg        
+        self.cb["odom"]["cnt"] += 1
+
+    def prepare_inputs(self):
+        inputs = (self.odom.twist.twist.linear.x * self.linear_gain, self.odom.twist.twist.linear.y * self.linear_gain,
+                         self.imu_vec[0] * self.imu_lin_acc_gain,
+                         self.imu_vec[1] * self.imu_lin_acc_gain,
+                         self.imu_vec[2] * self.imu_lin_acc_gain,
+                         self.imu_vec[3] * self.imu_gyrosco_gain,
+                         self.imu_vec[4] * self.imu_gyrosco_gain,
+                         self.imu_vec[5] * self.imu_gyrosco_gain,
+                         self.odom.pose.pose.position.x * self.pos_gain,
+                         self.odom.pose.pose.position.y * self.pos_gain,
+                         )
+        # print "%s.prepare_inputs inputs = %s" % (self.__class__.__name__, inputs)
+        return np.array(inputs)
+
+    def prepare_output(self, y):
+        # self.motors.linear.x = y[0,0] * self.output_gain
+        # self.motors.linear.y = y[1,0] * self.output_gain
+        # self.pub["_cmd_vel"].publish(self.motors)
+        self.motors.linear.x  = y[1,0] * self.output_gain * 1.414
+        self.motors.angular.z = y[0,0] * 1 # self.output_gain
+        self.pubs["_cmd_vel_raw"].publish(self.motors)
+        print "%s.prepare_output y = %s , motors = %s" % (y, self.motors)
+        
+class robotLPZ(robot):
+    def __init__(self, ref):
+        robot.__init__(self, ref)
+        self.pubs = {
+            "/motors": [Float64MultiArray,],
+            "/lpzros/x": [Float32MultiArray]
+            }
+        self.subs = {
+            "/sensors": [Float64MultiArray, self.cb_sensors],
+        }
+        self.numsen_raw = 2
+        self.numsen     = 2
+        self.nummot     = 2
+        self.sensors = Float64MultiArray()
+        self.sensors.data = [0 for i in range(self.numsen_raw)]
+        self.motors  = Float64MultiArray()
+        self.motors.data = [0 for i in range(self.nummot)]
+        # self.lag = 1
+        
+    def cb_sensors(self, msg):
+        self.sensors = msg
+
+    def prepare_inputs(self):
+        inputs = np.array(self.sensors.data)
+        print "%s.prepare_inputs inputs = %s" % (self.__class__.__name__, inputs)
+        return inputs
+
+    def prepare_output(self, y):
+        self.motors.data = y
+        # print "self.pubs", self.pubs
+        self.ref.pub["_motors"].publish(self.motors)
+        
+
+################################################################################
+# main homeostasis, homeokinesis class based on smp_thread_ros
+class LPZRos(smp_thread_ros):
+    modes = {"hs": 0, "hk": 1, "eh_pi_d": 2}
+
+    def __init__(self, mode="hs", loop_time = 1./20, robot = "lpz"):
+        print "loop_time", loop_time
+        if robot == "lpz":
+            self.robot = robotLPZ(self)
+        elif robot == "sphero":
+            self.robot = robotSphero(self)
+        else:
+            self.robot = None
+
+        # get pubsub configuration
+        pubs, subs = self.robot.get_pubsub()
+        
+        # init ros runners
+        smp_thread_ros.__init__(self, loop_time = loop_time,
+                                pubs = pubs, subs = subs)
+        
+        # self.name = "lpzros"
+        self.mode = LPZRos.modes[mode]
+        self.cnt = 0
+    
+        ############################################################
+        # model + meta params
+        self.numsen_raw = self.robot.numsen_raw # 10 # 8 # 5 # 2
+        self.numsen = self.robot.numsen # 10 # 8 # 5 # 2
+        self.nummot = 2
         # buffer size accomodates causal minimum 1 + lag time steps
-        self.bufsize = 1 + self.lag # 2
-        self.creativity = 0.2
-        # self.epsA = 0.1
+        self.bufsize = 1 + self.robot.lag # 2
+        self.creativity = 5.2
+        self.epsA = 0.2
         # self.epsA = 0.02
-        self.epsA = 0.001
+        # self.epsA = 0.001
         # self.epsC = 0.001
         # self.epsC = 0.001
         # self.epsC = 0.01
@@ -140,10 +242,8 @@ class LPZRos(smp_thread_ros):
         self.v_avg = np.zeros((self.numsen, 1)) 
         self.xsi   = np.zeros((self.numsen, 1))
 
-        self.imu  = Imu()
         self.imu_vec  = np.zeros((3 + 3 + 3, 1))
         self.imu_smooth = 0.8 # coef
-        self.odom = Odometry()
         
         # expansion
         self.exp_size = self.numsen
@@ -165,74 +265,18 @@ class LPZRos(smp_thread_ros):
         c = b + np.dot(self.res_wi_expand_amp, x)
         return c
         
-    def cb_odom(self, msg):
-        """ROS odometry callback, copy incoming data into local memory"""
-        # print type(msg)
-        self.odom = msg
-        # self.iosm.x[0] = self.odom.pose.pose.position.x
-        # self.iosm.x[1] = self.odom.pose.pose.position.y
-        # self.iosm.x_raw[0] = self.odom.pose.pose.position.x
-        # self.iosm.x_raw[1] = self.odom.pose.pose.position.y
-        # self.iosm.x_raw[0] = self.odom.twist.twist.linear.x
-        # self.iosm.x_raw[1] = self.odom.twist.twist.linear.x - self.cfg.target
-        
-        # self.iosm.x_raw[3] = self.odom.twist.twist.linear.y
-        # self.cb_sensors((self.odom.twist.twist.linear.x,self.odom.twist.twist.linear.y))
-        
-        # self.cb_sensors((self.odom.twist.twist.linear.x,self.odom.twist.twist.linear.y)) # ,
-        # self.cb_sensors((self.odom.twist.twist.linear.x,self.odom.twist.twist.linear.y,
-        #                  self.imu.linear_acceleration.x * imu_lin_acc_gain, self.imu.linear_acceleration.y * imu_lin_acc_gain,
-        #                  self.imu.linear_acceleration.z * imu_lin_acc_gain,
-        #                  r * imu_orienta_gain, p * imu_orienta_gain, y * imu_orienta_gain))
-        
-        self.cb_odom_cnt += 1
-        return
-    
-    def cb_imu(self, msg):
-        """ROS IMU callback: use odometry and incoming imu data to trigger
-        sensorimotor loop execution"""
-        # print "imu", msg
-        # return
-        # FIXME: do the averaging here
-        self.imu = msg
-        imu_vec_acc = np.array((self.imu.linear_acceleration.x, self.imu.linear_acceleration.y, self.imu.linear_acceleration.z))
-        imu_vec_gyr = np.array((self.imu.angular_velocity.x, self.imu.angular_velocity.y, self.imu.angular_velocity.z))
-        (r, p, y) = tf.transformations.euler_from_quaternion([self.imu.orientation.x, self.imu.orientation.y, self.imu.orientation.z, self.imu.orientation.w])
-        # print "r, p, y", r, p, y
-        imu_vec_ori = np.array((r, p, y))
-        # print "imu_vec_acc", imu_vec_acc
-        # print "imu_vec_gyr", imu_vec_gyr
-        # print "imu_vec_ori", imu_vec_ori
-        imu_vec_ = np.hstack((imu_vec_acc, imu_vec_gyr, imu_vec_ori)).reshape(self.imu_vec.shape)
-        # print "imu_vec_", imu_vec_
-        self.imu_vec = self.imu_vec * self.imu_smooth + (1 - self.imu_smooth) * imu_vec_
-        print "self.imu_vec", self.imu_vec
-
-        # (r, p, y) = tf.transformations.euler_from_quaternion([msg.orientation.x, msg.orientation.y, msg.orientation.z, msg.orientation.w])
-        # # print r, p, y
-        # self.iosm.x_raw[4] = r
-        # self.iosm.x_raw[5] = p
-        # self.iosm.x_raw[6] = y
-        # self.iosm.x_raw[7] = msg.angular_velocity.x
-        # self.iosm.x_raw[8] = msg.angular_velocity.y
-        # self.iosm.x_raw[9] = msg.angular_velocity.z
-        # self.iosm.x_raw[10] = msg.linear_acceleration.x
-        # self.iosm.x_raw[11] = msg.linear_acceleration.y
-        # self.iosm.x_raw[12] = msg.linear_acceleration.z
-
-        self.cb_imu_cnt += 1
-        
-    def cb_sensors(self, msg):
-        """lpz sensors callback: receive sensor values, sos algorithm attached"""
+    def brain(self, msg):
+        """lpz sensors callback: receive sensor values, sos algorithm attached, FloatArray input msg"""
         # FIXME: fix the timing
+        # print "msg", msg
         now = 0
         # self.msg_motors.data = []
         self.x = np.roll(self.x, 1, axis=1) # push back past
         self.y = np.roll(self.y, 1, axis=1) # push back past
         # update with new sensor data
-        self.x[:,now] = np.array(msg)
-        self.msg_inputs.data = self.x[:,now].flatten().tolist()
-        self.pub["_lpzros_x"].publish(self.msg_inputs)
+        self.x[:,now] = msg # np.array(msg)
+        # self.msg_inputs.data = self.x[:,now].flatten().tolist()
+        # self.pubs["_lpzros_x"].publish(self.msg_inputs)
         
         # self.x[[0,1],now] = 0.
         # print "msg", msg
@@ -244,10 +288,10 @@ class LPZRos(smp_thread_ros):
         
         # compute new motor values
         x_tmp = np.atleast_2d(self.x[:,now]).T + self.v_avg * self.creativity
-        print "x_tmp.shape", x_tmp.shape
+        # print "x_tmp.shape", x_tmp.shape
         # print self.g(np.dot(self.C, x_tmp) + self.h)
         m1 = np.dot(self.C, x_tmp)
-        print "m1.shape", m1.shape
+        # print "m1.shape", m1.shape
         t1 = self.g(m1 + self.h).reshape((self.nummot,))
         self.y[:,now] = t1
 
@@ -258,11 +302,11 @@ class LPZRos(smp_thread_ros):
         # print "y", self.y
         
         # local variables
-        x = np.atleast_2d(self.x[:,self.lag]).T
+        x = np.atleast_2d(self.x[:,self.robot.lag]).T
         # this is wrong
         # y = np.atleast_2d(self.y[:,self.lag]).T
         # this is better
-        y = np.atleast_2d(self.y[:,self.lag]).T
+        y = np.atleast_2d(self.y[:,self.robot.lag]).T
         x_fut = np.atleast_2d(self.x[:,now]).T
 
         # print "x", x.shape, x, x_fut.shape, x_fut
@@ -274,17 +318,19 @@ class LPZRos(smp_thread_ros):
         g_prime = dtanh(z) # derivative of g
         g_prime_inv = idtanh(z) # inverse derivative of g
 
-        print "g_prime", self.cnt, g_prime
-        print "g_prime_inv", self.cnt, g_prime_inv
+        # print "g_prime", self.cnt, g_prime
+        # print "g_prime_inv", self.cnt, g_prime_inv
 
         # forward prediction error xsi
+        # FIXME: include state x in forward model
         xsi = x_fut - (np.dot(self.A, y) + self.b)
         print "xsi =", xsi
         
         # forward model learning
-        self.A += self.epsA * np.dot(xsi, y.T) + (self.A * -0.0003) # * 0.1
-        # self.A += self.epsA * np.dot(xsi, np.atleast_2d(self.y[:,0])) + (self.A * -0.003) * 0.1
-        self.b += self.epsA * xsi              + (self.b * -0.0001) # * 0.1
+        dA = self.epsA * np.dot(xsi, y.T) + (self.A * -0.0003) # * 0.1
+        self.A += dA
+        db = self.epsA * xsi              + (self.b * -0.0001) # * 0.1
+        self.b += db
 
         # print "A", self.cnt, self.A
         # print "b", self.b
@@ -292,16 +338,17 @@ class LPZRos(smp_thread_ros):
         if self.mode == 1: # TLE / homekinesis
             eta = np.dot(np.linalg.pinv(self.A), xsi)
             zeta = np.clip(eta * g_prime_inv, -1., 1.)
-            print "eta", self.cnt, eta
-            print "zeta", self.cnt, zeta
+            # print "eta", self.cnt, eta
+            # print "zeta", self.cnt, zeta
             # print "C C^T", np.dot(self.C, self.C.T)
             # mue = np.dot(np.linalg.pinv(np.dot(self.C, self.C.T)), zeta)
-            lambda_ = np.eye(2) * np.random.uniform(-0.01, 0.01, 2)
+            # changed params + noise shape
+            lambda_ = np.eye(self.nummot) * np.random.uniform(-0.01, 0.01, (self.nummot, self.nummot))
             mue = np.dot(np.linalg.pinv(np.dot(self.C, self.C.T) + lambda_), zeta)
             v = np.clip(np.dot(self.C.T, mue), -1., 1.)
             self.v_avg += (v - self.v_avg) * 0.1
-            print "v", self.cnt, v
-            print "v_avg", self.cnt, self.v_avg
+            # print "v", self.cnt, v
+            # print "v_avg", self.cnt, self.v_avg
             EE = 1.0
 
             # print EE, v
@@ -346,28 +393,15 @@ class LPZRos(smp_thread_ros):
         #     rospy.signal_shutdown("stop")
         #     sys.exit(0)
 
+    def local_hooks(self):
+        pass
+        
     def prepare_inputs(self):
-        inputs = (self.odom.twist.twist.linear.x * self.linear_gain, self.odom.twist.twist.linear.y * self.linear_gain,
-                         self.imu_vec[0] * self.imu_lin_acc_gain,
-                         self.imu_vec[1] * self.imu_lin_acc_gain,
-                         self.imu_vec[2] * self.imu_lin_acc_gain,
-                         self.imu_vec[3] * self.imu_gyrosco_gain,
-                         self.imu_vec[4] * self.imu_gyrosco_gain,
-                         self.imu_vec[5] * self.imu_gyrosco_gain,
-                         self.odom.pose.pose.position.x * self.pos_gain,
-                         self.odom.pose.pose.position.y * self.pos_gain,
-                         )
-        return inputs
-
+        return self.robot.prepare_inputs()
+    
     def prepare_output(self):
-        # self.motors.linear.x = self.y[0,0] * self.output_gain
-        # self.motors.linear.y = self.y[1,0] * self.output_gain
-        # self.pub["_cmd_vel"].publish(self.motors)
-        self.motors.linear.x  = self.y[1,0] * self.output_gain * 1.414
-        self.motors.angular.z = self.y[0,0] * 1 # self.output_gain
-        self.pub["_cmd_vel_raw"].publish(self.motors)
-        print "y = %s , motors = %s" % (self.y, self.motors)
-                            
+        return self.robot.prepare_output(self.y[:,0])
+
     def run(self):
         """LPZRos run method overwriting smp_thread_ros"""
         print("starting")
@@ -380,7 +414,7 @@ class LPZRos(smp_thread_ros):
             inputs = self.prepare_inputs()
 
             # execute network / controller
-            self.cb_sensors(inputs)
+            self.brain(inputs)
             
             # local: adjust generic network output to local conditions
             self.prepare_output()
@@ -408,18 +442,21 @@ class LPZRos(smp_thread_ros):
             
             self.rate.sleep()
 
+# def get_config_sphero():
+            
 if __name__ == "__main__":
     import signal
     parser = argparse.ArgumentParser(description="lpzrobots ROS controller: test homeostatic/kinetic learning")
     parser.add_argument("-m",  "--mode",      type=str, help="select mode [hs] from " + str(LPZRos.modes), default = "hs")
     parser.add_argument("-lt", "--loop_time", type=float, help="loop time [1./20]", default=1./20)
+    parser.add_argument("-r",  "--robot",     type=str,   help="Which robot [lpz], {lpz, sphero, puppy, roll-your-own}")
     args = parser.parse_args()
 
     # sanity check
     if not args.mode in LPZRos.modes:
         print "invalid mode string, use one of " + str(LPZRos.modes)
         sys.exit(0)
-    
+        
     lpzros = LPZRos(args.mode, loop_time = args.loop_time)
 
     def handler(signum, frame):
