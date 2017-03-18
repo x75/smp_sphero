@@ -21,8 +21,10 @@ from sensor_msgs.msg import Imu
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import Twist, Quaternion #, Point, Pose, TwistWithCovariance, Vector3
 from tiny_msgs.msg import tinyIMU
+import cPickle as pickle
+import os
 
-import tf
+#from puppy_msgs.msg import puppy_maintenance
 
 from smp_thread import smp_thread_ros
 # from reservoirs import Reservoir
@@ -39,117 +41,121 @@ def idtanh(x):
 # main homeostasis, homeokinesis class based on smp_thread_ros
 class LPZRos(smp_thread_ros):
     modes = {"hs": 0, "hk": 1, "eh_pi_d": 2}
-    def __init__(self, mode="hs", loop_time = 0.05):
+    control_modes = {"velocity" : 0, "position" : 1}
+
+    def __init__(self, args):
         pubs = {
             "/homeostasis_motor": [Float32MultiArray,],
-            "/lpzros/x": [Float32MultiArray]
+            "/lpzros/x": [Float32MultiArray],
+            "/lpzros/xsi": [Float32MultiArray,],
             }
         subs = {
             "/tinyImu": [tinyIMU, self.cb_imu],
-            #"/odom": [Odometry, self.cb_odom],
             }
-        smp_thread_ros.__init__(self, loop_time = loop_time, pubs = pubs, subs = subs)
-        # self.name = "lpzros"
-        self.mode = LPZRos.modes[mode]
+
+        # gather arguments and transfer modes to integer representation
+        self.mode = LPZRos.modes[args.mode]
+        self.control_mode = LPZRos.control_modes[args.control_mode]
+        self.numtimesteps = args.numtimesteps
+        self.loop_time = args.looptime
+
+        smp_thread_ros.__init__(self, loop_time = self.loop_time, pubs = pubs, subs = subs)
+
+        # initialize counters
         self.cnt = 0
-        ############################################################
-        # # ros stuff
-        # if False:
-        #     rospy.init_node(self.name)
-        #     # pub=rospy.Publisher("/motors", Float64MultiArray, queue_size=1)
-        #     self.sub = {}
-        #     self.pub = {}
-        #     self.sub["imu"] = rospy.Subscriber("/imu",
-        #                                     Imu, self.cb_imu)
-        #     self.sub["odom"] = rospy.Subscriber("/odom",
-        #                                     Odometry, self.cb_odom)
-        #     self.pub["twist"] = rospy.Publisher("/cmd_vel", Twist)
-        #     self.pub["color"] = rospy.Publisher("/set_color", ColorRGBA)
-
-        # self.pub["target"] = rospy.Publisher("/learner/target", reservoir)
-        # self.pub["learn_zn"] = rospy.Publisher("/learner/zn", reservoir)
-
-        # self.pub_motors  = rospy.Publisher("/motors", Float64MultiArray, queue_size = 2)
-        # self.sub_sensor = rospy.Subscriber("/sensors", Float64MultiArray, self.cb_sensors)
-        # self.pub_sensor_exp = rospy.Publisher("/sensors_exp", Float64MultiArray, queue_size = 2)
-        # pub=rospy.Publisher("/chatter", Float64MultiArray)
-
         self.cb_imu_cnt = 0
-        self.cb_odom_cnt = 0
 
-        # sphero color
-        #self.color = ColorRGBA()
-        #self.motors = Twist()
-
-        self.msg_inputs     = Float32MultiArray()
-        self.msg_motors     = Float32MultiArray()
-        self.msg_motors.data = [0 for i in range(4)]
-        self.msg_sensor_exp = Float64MultiArray()
 
         ############################################################
         # model + meta params
-        self.numsen_raw = 3 # 5 # 2
-        self.numsen = 3 # 5 # 2
-        self.nummot = 4
+        # self.numsen_raw = 11 # 5 # 2
+        self.numsen = 6 # 5 # 2
+        self.nummot = 4 # introduce 2 ghost variables
         self.imu_lin_acc_gain = 0 # 1e-3
-        self.imu_gyrosco_gain = 1/10000.
+        self.imu_gyrosco_gain = 1/5000.
         self.imu_orienta_gain = 0 # 1e-1
         self.linear_gain      = 0.0 # 1e-1
-        self.output_gain = 5000
+        self.output_gain = 32000 # 5000 # velocitycontrol
+
+        self.msg_inputs     = Float32MultiArray()
+
+        self.msg_xsi     = Float32MultiArray()
+        self.msg_xsi.data = [0] * self.numsen
+
+        self.msg_motors     = Float32MultiArray()
+        self.msg_motors.data = [0] * self.nummot
+
+        #self.msg_sensor_exp = Float64MultiArray()
 
         # sphero lag is 4 timesteps
-        self.lag = 2 # 2
+        self.lag = 2 # 2 tested on puppy not so much influence
         # buffer size accomodates causal minimum 1 + lag time steps
         self.bufsize = 1 + self.lag # 2
-        self.creativity = 1.05
+        self.creativity = args.creativity
         # self.epsA = 0.1
-        self.epsA = 0.02
-        #self.epsA = 0.001
+        # self.epsA = 0.02
+        self.epsA = args.epsA
         # self.epsC = 0.001
         #self.epsC = 0.01
-        self.epsC = 0.9
-        #self.epsC = 0.5
+        #self.epsC = 0.9
+        self.epsC = args.epsC
 
         ############################################################
         # forward model
-        # self.A = np.eye(self.nummot) * 1.
-        # self.A = np.eye(self.numsen) * 1.
-        # self.A  = np.zeros((self.numsen, self.nummot))
-        # self.A[0,0] = 0.4
-        # self.A[1,1] = 0.4
-        # self.A[2,2] = 0.4
-        # self.A[2,3] = 0.4
-        # # self.A[3,3] = 1.
-        # # self.A[range(self.nummot),range(self.nummot)] = 1.
         self.A  = np.random.uniform(-1e-1, 1e-1, (self.numsen, self.nummot))
         self.b = np.zeros((self.numsen,1))
+
+        print "initial A", self.A
+
         # controller
-        # self.C  = np.eye(self.nummot) * 0.4
-        self.C  = np.zeros((self.nummot, self.numsen))
-        self.C[0,0] = 1.
-        self.C[1,1] = 1.
-        self.C[2,2] = 1.
-        self.C[3,2] = 1.
-        self.C *= 0.4
-        # self.C[range(self.nummot),range(self.nummot)] = 1 * 0.4
         self.C  = np.random.uniform(-1e-1, 1e-1, (self.nummot, self.numsen))
-        print "self.C", self.C
+
+        print "initial C", self.C
+
         self.h  = np.zeros((self.nummot,1))
         self.g  = np.tanh # sigmoidal activation function
         self.g_ = dtanh # derivative of sigmoidal activation function
+
         # state
         self.x = np.ones ((self.numsen, self.bufsize))
         self.y = np.zeros((self.nummot, self.bufsize))
         self.z = np.zeros((self.numsen, 1))
+
         # auxiliary variables
         self.L     = np.zeros((self.numsen, self.nummot))
         self.v_avg = np.zeros((self.numsen, 1))
         self.xsi   = np.zeros((self.numsen, 1))
 
+        self.xsiAvg = 0
+        self.xsiAvgSmooth = 0.01
+
         self.imu  = tinyIMU()
         self.imu_vec  = np.zeros((3 + 3, 1))
         self.imu_smooth = 0.5 # coef
-        self.odom = Odometry()
+
+        self.motorSmooth = 0.5
+
+        self.variableDict = {
+            "dataversion": 1, # if something is changed in this dict style, increment this!
+            "timesteps" : self.numtimesteps,
+            "looptime" : self.loop_time,
+            "startTime" : time.time(),
+            "endTime" : 0,
+            "numsen": self.numsen,
+            "nummot": self.nummot,
+            "epsA": self.epsA,
+            "epsC": self.epsC,
+            "creativity": self.creativity,
+            "imuSmooth": self.imu_smooth,
+            "motorSmooth": self.motorSmooth,
+            "C": np.zeros((self.numtimesteps,) + self.C.shape),
+            "A": np.zeros((self.numtimesteps,) + self.A.shape),
+            "h": np.zeros((self.numtimesteps,) + self.h.shape),
+            "b": np.zeros((self.numtimesteps,) + self.b.shape),
+            "x": np.zeros((self.numtimesteps,) + self.x.shape),
+            "y": np.zeros((self.numtimesteps,) + self.y.shape),
+            "xsi": np.zeros((self.numtimesteps,) + self.xsi.shape)
+        }
 
         # expansion
         # self.exp_size = self.numsen
@@ -171,64 +177,24 @@ class LPZRos(smp_thread_ros):
     #     c = b + np.dot(self.res_wi_expand_amp, x)
     #     return c
 
-    def cb_odom(self, msg):
-        """ROS odometry callback, copy incoming data into local memory"""
-        # print type(msg)
-        self.odom = msg
-        # self.iosm.x[0] = self.odom.pose.pose.position.x
-        # self.iosm.x[1] = self.odom.pose.pose.position.y
-        # self.iosm.x_raw[0] = self.odom.pose.pose.position.x
-        # self.iosm.x_raw[1] = self.odom.pose.pose.position.y
-        # self.iosm.x_raw[0] = self.odom.twist.twist.linear.x
-        # self.iosm.x_raw[1] = self.odom.twist.twist.linear.x - self.cfg.target
-
-        # self.iosm.x_raw[3] = self.odom.twist.twist.linear.y
-        # self.cb_sensors((self.odom.twist.twist.linear.x,self.odom.twist.twist.linear.y))
-
-        # self.cb_sensors((self.odom.twist.twist.linear.x,self.odom.twist.twist.linear.y)) # ,
-        # self.cb_sensors((self.odom.twist.twist.linear.x,self.odom.twist.twist.linear.y,
-        #                  self.imu.linear_acceleration.x * imu_lin_acc_gain, self.imu.linear_acceleration.y * imu_lin_acc_gain,
-        #                  self.imu.linear_acceleration.z * imu_lin_acc_gain,
-        #                  r * imu_orienta_gain, p * imu_orienta_gain, y * imu_orienta_gain))
-
-        self.cb_odom_cnt += 1
-        return
 
     def cb_imu(self, msg):
         """ROS IMU callback: use odometry and incoming imu data to trigger
         sensorimotor loop execution"""
-        # print "imu", msg
-        # return
-        # FIXME: do the averaging here
+
         self.imu = msg
         imu_vec_acc = np.array((self.imu.accel.x, self.imu.accel.y, self.imu.accel.z))
         imu_vec_gyr = np.array((self.imu.gyro.x, self.imu.gyro.y, self.imu.gyro.z))
-        #(r, p, y) = tf.transformations.euler_from_quaternion([self.imu.orientation.x, self.imu.orientation.y, self.imu.orientation.z, self.imu.orientation.w])
-        # print "r, p, y", r, p, y
-        #imu_vec_ori = np.array((r, p, y))
-        # print "imu_vec_acc", imu_vec_acc
-        # print "imu_vec_gyr", imu_vec_gyr
-        # print "imu_vec_ori", imu_vec_ori
+
         imu_vec_ = np.hstack((imu_vec_acc, imu_vec_gyr)).reshape(self.imu_vec.shape)
         #print "imu_vec_", imu_vec_
+        #self.imu_smooth = (self.y[5,0] + 1) / 2
+        self.imu_smooth = 0.5
         self.imu_vec = self.imu_vec * self.imu_smooth + (1 - self.imu_smooth) * imu_vec_
-        print "self.imu_vec", self.imu_vec
-
-        # (r, p, y) = tf.transformations.euler_from_quaternion([msg.orientation.x, msg.orientation.y, msg.orientation.z, msg.orientation.w])
-        # # print r, p, y
-        # self.iosm.x_raw[4] = r
-        # self.iosm.x_raw[5] = p
-        # self.iosm.x_raw[6] = y
-        # self.iosm.x_raw[7] = msg.angular_velocity.x
-        # self.iosm.x_raw[8] = msg.angular_velocity.y
-        # self.iosm.x_raw[9] = msg.angular_velocity.z
-        # self.iosm.x_raw[10] = msg.linear_acceleration.x
-        # self.iosm.x_raw[11] = msg.linear_acceleration.y
-        # self.iosm.x_raw[12] = msg.linear_acceleration.z
 
         self.cb_imu_cnt += 1
 
-    def cb_sensors(self, msg):
+    def algorithm_learning_step(self, msg):
         """lpz sensors callback: receive sensor values, sos algorithm attached"""
         # FIXME: fix the timing
         now = 0
@@ -250,13 +216,13 @@ class LPZRos(smp_thread_ros):
 
         # compute new motor values
         x_tmp = np.atleast_2d(self.x[:,now]).T + self.v_avg * self.creativity
-        print "x_tmp.shape", x_tmp.shape
+        # print "x_tmp.shape", x_tmp.shape
         # print self.g(np.dot(self.C, x_tmp) + self.h)
         m1 = np.dot(self.C, x_tmp)
-        print "m1.shape", m1.shape, m1
+        # print "m1.shape", m1.shape, m1
         t1 = self.g(m1 + self.h).reshape((self.nummot,))
         self.y[:,now] = t1
-        print "t1", t1
+        # print "t1", t1
         self.cnt += 1
         if self.cnt <= 2: return
 
@@ -265,6 +231,7 @@ class LPZRos(smp_thread_ros):
 
         # local variables
         x = np.atleast_2d(self.x[:,self.lag]).T
+        # print(x.flatten())
         # this is wrong
         # y = np.atleast_2d(self.y[:,self.lag]).T
         # this is better
@@ -280,12 +247,22 @@ class LPZRos(smp_thread_ros):
         g_prime = dtanh(z) # derivative of g
         g_prime_inv = idtanh(z) # inverse derivative of g
 
-        print "g_prime", self.cnt, g_prime
-        print "g_prime_inv", self.cnt, g_prime_inv
+        # print "g_prime", self.cnt, g_prime
+        # print "g_prime_inv", self.cnt, g_prime_inv
 
         # forward prediction error xsi
         xsi = x_fut - (np.dot(self.A, y) + self.b)
-        print "xsi =", xsi
+        # print "xsi =", xsi
+
+
+
+        self.xsiAvg = np.sum(np.abs(xsi)) * self.xsiAvgSmooth + (1 - self.xsiAvgSmooth) * self.xsiAvg
+
+        self.msg_xsi.data = xsi.flatten().tolist()
+        self.msg_xsi.data.append(self.xsiAvg)
+        self.pub["_lpzros_xsi"].publish(self.msg_xsi)
+
+        print("Xsi Average %f" % self.xsiAvg)
 
         # forward model learning
         self.A += self.epsA * np.dot(xsi, y.T) + (self.A * -0.003) * 0.1
@@ -322,9 +299,6 @@ class LPZRos(smp_thread_ros):
             dC = (np.dot(mue, v.T) + (np.dot((mue * y * zeta), -2 * x.T))) * EE * self.epsC
             dh = mue * y * zeta * -2 * EE * self.epsC
 
-            # pass
-            # dC = np.zeros_like(self.C)
-            # dh = np.zeros_like(self.h)
 
         elif self.mode == 0: # homestastic learning
             eta = np.dot(self.A.T, xsi)
@@ -337,8 +311,9 @@ class LPZRos(smp_thread_ros):
         # FIXME: ???
         self.h += np.clip(dh, -.1, .1)
         self.C += np.clip(dC, -.1, .1)
-        #self.h += np.clip(dh, -10, 10)
-        #self.C += np.clip(dC, -10, 10)
+
+        print "C:\n" + str(self.C)
+        print "A:\n" + str(self.A)
 
         # print "C", self.C
         # print "h", self.h
@@ -353,23 +328,51 @@ class LPZRos(smp_thread_ros):
         #     sys.exit(0)
 
     def prepare_inputs(self):
-        # inputs = (self.odom.twist.twist.linear.x,self.odom.twist.twist.linear.y,
-        #                  self.imu_vec[0] * self.imu_lin_acc_gain,
-        #                  self.imu_vec[1] * self.imu_lin_acc_gain,
-        #                  self.imu_vec[2] * self.imu_lin_acc_gain,
-        #                  self.imu_vec[3] * self.imu_gyrosco_gain,
-        #                  self.imu_vec[4] * self.imu_gyrosco_gain,
-        #                  self.imu_vec[5] * self.imu_gyrosco_gain)
-        inputs = (self.imu_vec[3] * self.imu_gyrosco_gain,self.imu_vec[4] * self.imu_gyrosco_gain,self.imu_vec[5] * self.imu_gyrosco_gain,)
-        print "inputs", inputs
+        #imu_smooth = {1, 0.95, 0.9, 0.8, 0.7, 0.5, 0.3, 0.2, 0.1, 0.05}
+
+        inputs = (
+            self.imu_vec[0] * self.imu_gyrosco_gain,
+            self.imu_vec[1] * self.imu_gyrosco_gain,
+            self.imu_vec[2] * self.imu_gyrosco_gain,
+            self.imu_vec[3] * self.imu_gyrosco_gain,
+            self.imu_vec[4] * self.imu_gyrosco_gain,
+            self.imu_vec[5] * self.imu_gyrosco_gain,
+            #self.msg_motors.data[0] / self.output_gain,
+            #self.msg_motors.data[1] / self.output_gain,
+            #self.msg_motors.data[2] / self.output_gain,
+            #self.msg_motors.data[3] / self.output_gain,
+            #self.y[0,0],
+            #self.y[1,0],
+            #self.y[2,0],
+            #self.y[3,0],
+        )
+
+        # check input dimensionality
+        if(len(inputs) != self.numsen):
+            raise Exception("numsen doesn't match up with the real input data dimensionality numsen: " + str(self.numsen) + ", len: " + str(len(inputs)))
+
+        print "Inputs: ", inputs
         return inputs
 
-    def prepare_output(self):
-        #self.motors.linear.x = self.y[0,0] * self.output_gain
-        #self.motors.linear.y = self.y[1,0] * self.output_gain
-        motor_old = np.array(self.msg_motors.data) / self.output_gain
-        self.msg_motors.data = np.clip((motor_old + self.y[:,0]) * self.output_gain, -32000, 32000).tolist()
+    def prepare_and_send_output(self):
+
+        # velocity control
+        if self.control_mode == 0:
+            motor_old = np.array(self.msg_motors.data)
+            self.msg_motors.data = np.clip((motor_old + self.y[:,0]) * self.output_gain, -32000, 32000).tolist()
+
+        # position control
+        elif self.control_mode == 1:
+            motor_old = np.array(self.msg_motors.data)
+
+            #self.motorAlpha = (self.y[4,0] + 1)/ 2. * 0.7 + 0.1 # between 0.1 and 0.8
+            print "MotorAlpha %f" % self.motorSmooth
+            self.msg_motors.data = self.motorSmooth * self.y[:,0] * self.output_gain + (1 - self.motorSmooth) * motor_old
+        else:
+            raise Exception("Unknown control mode " + str(self.control_mode))
+
         print "y = %s , motors = %s" % (self.y[:,0], self.msg_motors)
+
         self.pub["_homeostasis_motor"].publish(self.msg_motors)
 
     def run(self):
@@ -377,46 +380,79 @@ class LPZRos(smp_thread_ros):
         print("starting")
         while self.isrunning:
             # print "smp_thread: running"
-            # call any local computations
-            self.local_hooks()
 
             # prepare input for local conditions
             inputs = self.prepare_inputs()
 
             # execute network / controller
-            self.cb_sensors(inputs)
+            self.algorithm_learning_step(inputs)
 
-            # local: adjust generic network output to local conditions
-            self.prepare_output()
+            # adjust generic network output to local conditions and send
+            self.prepare_and_send_output()
 
-            # post hooks
-            self.local_post_hooks()
-            # write to memory
-            # self.memory_pushback()
-
-            # publish all state data
-            # self.pub_all()
+            # store all variables for logging
+            self.storeAllVariables()
 
             # count
             self.cnt_main += 1 # incr counter
 
-            # print "%s.run isrunning %d" % (self.__class__.__name__, self.isrunning)
-
             # check if finished
-            if self.cnt_main == 100000: # self.cfg.len_episode:
+            if self.cnt_main == self.numtimesteps: # self.cfg.len_episode:
                 # self.savelogs()
                 self.isrunning = False
+
+                # write end time
+                self.variableDict["endTime"] = time.time()
+
+                # save dict to file
+                self.pickleDumpVariables()
+
                 # generates problem with batch mode
                 rospy.signal_shutdown("ending")
                 print("ending")
 
             self.rate.sleep()
 
+    def storeAllVariables(self):
+        self.storeVariable("C", self.C)
+        self.storeVariable("A", self.A)
+        self.storeVariable("h", self.h)
+        self.storeVariable("b", self.b)
+        self.storeVariable("x", self.x)
+        self.storeVariable("y", self.y)
+        self.storeVariable("xsi", self.xsi)
+
+    def storeVariable(self, name, value):
+        self.variableDict[name][self.cnt_main,:,:] = value
+
+    def pickleDumpVariables(self):
+        id = 0
+        while True:
+            filename = self.combineName("pickles/", self.epsC, self.epsA, self.creativity, self.numtimesteps, id, ".pickle")
+
+            if not os.path.exists(filename):
+                pickle.dump(self.variableDict, open(filename, "wb"))
+                return
+
+            # increment id and try again
+            id += 1
+
+
+    def combineName(self, prefix, epsC, epsA, creativity, timesteps, id, postfix):
+        return prefix + "recording_eC" + str(epsC) + "_eA" + str(epsA) + "_c" + str(creativity) + "_n" + str(timesteps) + "_id" + str(id) + postfix
+
 if __name__ == "__main__":
     import signal
     parser = argparse.ArgumentParser(description="lpzrobots ROS controller: test homeostatic/kinetic learning")
-    parser.add_argument("-m", "--mode", type=str, help="select mode [hs] from " + str(LPZRos.modes), default = "hs")
-    # parser.add_argument("-m", "--mode", type=int, help="select mode: ")
+    parser.add_argument("-m", "--mode", type=str, help="select mode [hs] from " + str(LPZRos.modes), default = "hk")
+    parser.add_argument("-cm", "--control_mode", type=str, help="select control mode from " + str(LPZRos.control_modes), default="position")
+    parser.add_argument("-n", "--numtimesteps", type=int, help="Episode length in timesteps, standard 1000", default= 1000)
+    parser.add_argument("-lt", "--looptime", type=float, help="delay between timesteps in the loop", default = 0.05)
+    parser.add_argument("-eC", "--epsC", type=float, help="learning rate for controller", default = 0.2)
+    parser.add_argument("-eA", "--epsA", type=float, help="learning rate for model", default = 0.01)
+    parser.add_argument("-c", "--creativity", type=float, help="creativity", default = 0.5)
+
+
     args = parser.parse_args()
 
     # sanity check
@@ -424,7 +460,11 @@ if __name__ == "__main__":
         print "invalid mode string, use one of " + str(LPZRos.modes)
         sys.exit(0)
 
-    lpzros = LPZRos(args.mode)
+    if not args.control_mode in LPZRos.control_modes:
+        print "invalid control_mode string, use one of " + str(LPZRos.control_modes)
+        sys.exit(0)
+
+    lpzros = LPZRos(args)
 
     def handler(signum, frame):
         print 'Signal handler called with signal', signum
