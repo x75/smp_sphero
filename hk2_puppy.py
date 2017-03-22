@@ -23,6 +23,7 @@ from geometry_msgs.msg import Twist, Quaternion #, Point, Pose, TwistWithCovaria
 from tiny_msgs.msg import tinyIMU
 import cPickle as pickle
 import os
+import warnings
 
 #from puppy_msgs.msg import puppy_maintenance
 
@@ -58,6 +59,8 @@ class LPZRos(smp_thread_ros):
         self.control_mode = LPZRos.control_modes[args.control_mode]
         self.numtimesteps = args.numtimesteps
         self.loop_time = args.looptime
+        self.automaticMode = args.automaticMode
+        self.verbose = args.verbose
 
         smp_thread_ros.__init__(self, loop_time = self.loop_time, pubs = pubs, subs = subs)
 
@@ -100,17 +103,29 @@ class LPZRos(smp_thread_ros):
         #self.epsC = 0.9
         self.epsC = args.epsC
 
+        # sampling scale for automaticMode
+        self.automaticModeScaleEpsA = 0.5
+        self.automaticModeScaleEpsC = 0.5
+
+        if self.automaticMode:
+            self.epsA = np.random.exponential(scale=self.automaticModeScaleEpsA, size = 1)[0]
+            self.epsC = np.random.exponential(scale=self.automaticModeScaleEpsC, size = 1)[0]
+
+        print "EpsA:\t%f\nEpsC:\t%f\nCreativity:\t%f\nEpisodelength:\t%d\nLag:\t%d" % (self.epsA, self.epsC,self.creativity, self.numtimesteps,self.lag)
+
         ############################################################
         # forward model
         self.A  = np.random.uniform(-1e-1, 1e-1, (self.numsen, self.nummot))
         self.b = np.zeros((self.numsen,1))
 
-        print "initial A", self.A
+        print "initial A"
+        print self.A
 
         # controller
         self.C  = np.random.uniform(-1e-1, 1e-1, (self.nummot, self.numsen))
 
-        print "initial C", self.C
+        print "initial C"
+        print self.C
 
         self.h  = np.zeros((self.nummot,1))
         self.g  = np.tanh # sigmoidal activation function
@@ -135,8 +150,22 @@ class LPZRos(smp_thread_ros):
 
         self.motorSmooth = 0.5
 
+        warnings.filterwarnings("error")
+        np.seterr(all='print')
+        self.exceptionCounter = 0
+        self.maxExceptionCounter = 10
+
+
+        # If something is changed in the variableDict style or content, change dataversion!
+        # Version History:
+        # 1: Initial Commit
+        # 2: xsi was not saved correctly before.
+        # 3: lag and automaticMode + scales included
+        # 4: exceptionCounter added
+        # 5: exceptionCounter working :) forgot to increase versionnumber and wasn't working good
+
         self.variableDict = {
-            "dataversion": 1, # if something is changed in this dict style, increment this!
+            "dataversion": 5,
             "timesteps" : self.numtimesteps,
             "looptime" : self.loop_time,
             "startTime" : time.time(),
@@ -148,6 +177,11 @@ class LPZRos(smp_thread_ros):
             "creativity": self.creativity,
             "imuSmooth": self.imu_smooth,
             "motorSmooth": self.motorSmooth,
+            "lag": self.lag,
+            "automaticMode": self.automaticMode,
+            "automaticModeScaleEpsA": self.automaticModeScaleEpsA,
+            "automaticModeScaleEpsC": self.automaticModeScaleEpsC,
+            "exceptionCounter": 0,
             "C": np.zeros((self.numtimesteps,) + self.C.shape),
             "A": np.zeros((self.numtimesteps,) + self.A.shape),
             "h": np.zeros((self.numtimesteps,) + self.h.shape),
@@ -156,6 +190,8 @@ class LPZRos(smp_thread_ros):
             "y": np.zeros((self.numtimesteps,) + self.y.shape),
             "xsi": np.zeros((self.numtimesteps,) + self.xsi.shape)
         }
+
+
 
         # expansion
         # self.exp_size = self.numsen
@@ -195,137 +231,150 @@ class LPZRos(smp_thread_ros):
         self.cb_imu_cnt += 1
 
     def algorithm_learning_step(self, msg):
-        """lpz sensors callback: receive sensor values, sos algorithm attached"""
-        # FIXME: fix the timing
-        now = 0
-        # self.msg_motors.data = []
-        self.x = np.roll(self.x, 1, axis=1) # push back past
-        self.y = np.roll(self.y, 1, axis=1) # push back past
-        # update with new sensor data
-        self.x[:,now] = np.array(msg).reshape((self.numsen, ))
-        self.msg_inputs.data = self.x[:,now].flatten().tolist()
-        self.pub["_lpzros_x"].publish(self.msg_inputs)
+        try:
+            """lpz sensors callback: receive sensor values, sos algorithm attached"""
+            # FIXME: fix the timing
+            now = 0
+            # self.msg_motors.data = []
+            self.x = np.roll(self.x, 1, axis=1) # push back past
+            self.y = np.roll(self.y, 1, axis=1) # push back past
+            # update with new sensor data
+            self.x[:,now] = np.array(msg).reshape((self.numsen, ))
+            self.msg_inputs.data = self.x[:,now].flatten().tolist()
+            self.pub["_lpzros_x"].publish(self.msg_inputs)
 
-        # self.x[[0,1],now] = 0.
-        # print "msg", msg
+            # self.x[[0,1],now] = 0.
+            # print "msg", msg
 
-        # xa = np.array([msg.data]).T
-        # self.x[:,[0]] = self.expansion_random_system(xa, dim_target = self.numsen)
-        # self.msg_sensor_exp.data = self.x.flatten().tolist()
-        # self.pub_sensor_exp.publish(self.msg_sensor_exp)
+            # xa = np.array([msg.data]).T
+            # self.x[:,[0]] = self.expansion_random_system(xa, dim_target = self.numsen)
+            # self.msg_sensor_exp.data = self.x.flatten().tolist()
+            # self.pub_sensor_exp.publish(self.msg_sensor_exp)
 
-        # compute new motor values
-        x_tmp = np.atleast_2d(self.x[:,now]).T + self.v_avg * self.creativity
-        # print "x_tmp.shape", x_tmp.shape
-        # print self.g(np.dot(self.C, x_tmp) + self.h)
-        m1 = np.dot(self.C, x_tmp)
-        # print "m1.shape", m1.shape, m1
-        t1 = self.g(m1 + self.h).reshape((self.nummot,))
-        self.y[:,now] = t1
-        # print "t1", t1
-        self.cnt += 1
-        if self.cnt <= 2: return
+            # compute new motor values
+            x_tmp = np.atleast_2d(self.x[:,now]).T + self.v_avg * self.creativity
+            # print "x_tmp.shape", x_tmp.shape
+            # print self.g(np.dot(self.C, x_tmp) + self.h)
+            m1 = np.dot(self.C, x_tmp)
+            # print "m1.shape", m1.shape, m1
+            t1 = self.g(m1 + self.h).reshape((self.nummot,))
+            self.y[:,now] = t1
+            # print "t1", t1
+            self.cnt += 1
+            if self.cnt <= 2: return
 
-        # print "x", self.x
-        # print "y", self.y
+            # print "x", self.x
+            # print "y", self.y
 
-        # local variables
-        x = np.atleast_2d(self.x[:,self.lag]).T
-        # print(x.flatten())
-        # this is wrong
-        # y = np.atleast_2d(self.y[:,self.lag]).T
-        # this is better
-        y = np.atleast_2d(self.y[:,self.lag]).T
-        x_fut = np.atleast_2d(self.x[:,now]).T
+            # local variables
+            x = np.atleast_2d(self.x[:,self.lag]).T
+            # print(x.flatten())
+            # this is wrong
+            # y = np.atleast_2d(self.y[:,self.lag]).T
+            # this is better
+            y = np.atleast_2d(self.y[:,self.lag]).T
+            x_fut = np.atleast_2d(self.x[:,now]).T
 
-        # print "x", x.shape, x, x_fut.shape, x_fut
-        z = np.dot(self.C, x + self.v_avg * self.creativity) + self.h
-        # z = np.dot(self.C, x)
-        # print z.shape, x.shape
-        # print z - x
+            # print "x", x.shape, x, x_fut.shape, x_fut
+            z = np.dot(self.C, x + self.v_avg * self.creativity) + self.h
+            # z = np.dot(self.C, x)
+            # print z.shape, x.shape
+            # print z - x
 
-        g_prime = dtanh(z) # derivative of g
-        g_prime_inv = idtanh(z) # inverse derivative of g
+            g_prime = dtanh(z) # derivative of g
+            g_prime_inv = idtanh(z) # inverse derivative of g
 
-        # print "g_prime", self.cnt, g_prime
-        # print "g_prime_inv", self.cnt, g_prime_inv
+            # print "g_prime", self.cnt, g_prime
+            # print "g_prime_inv", self.cnt, g_prime_inv
 
-        # forward prediction error xsi
-        xsi = x_fut - (np.dot(self.A, y) + self.b)
-        # print "xsi =", xsi
+            # forward prediction error xsi
+            xsi = x_fut - (np.dot(self.A, y) + self.b)
+
+            # for the purpose of pickling it later
+            self.xsi = xsi
+
+            self.xsiAvg = np.sum(np.abs(xsi)) * self.xsiAvgSmooth + (1 - self.xsiAvgSmooth) * self.xsiAvg
+
+            self.msg_xsi.data = xsi.flatten().tolist()
+            self.msg_xsi.data.append(self.xsiAvg)
+            self.pub["_lpzros_xsi"].publish(self.msg_xsi)
+
+            if(self.verbose): print("Xsi Average %f" % self.xsiAvg)
+
+            # forward model learning
+            self.A += self.epsA * np.dot(xsi, y.T) + (self.A * -0.003) * 0.1
+            # self.A += self.epsA * np.dot(xsi, np.atleast_2d(self.y[:,0])) + (self.A * -0.003) * 0.1
+            self.b += self.epsA * xsi              + (self.b * -0.001) * 0.1
+
+            # print "A", self.cnt, self.A
+            # print "b", self.b
+
+            if self.mode == 1: # TLE / homekinesis
+                eta = np.dot(np.linalg.pinv(self.A), xsi)
+                zeta = np.clip(eta * g_prime_inv, -1., 1.)
+                if self.verbose: print "eta", self.cnt, eta
+                if self.verbose: print "zeta", self.cnt, zeta
+                # print "C C^T", np.dot(self.C, self.C.T)
+                # mue = np.dot(np.linalg.pinv(np.dot(self.C, self.C.T)), zeta)
+                lambda_ = np.eye(self.nummot) * np.random.uniform(-0.01, 0.01, self.nummot)
+                mue = np.dot(np.linalg.pinv(np.dot(self.C, self.C.T) + lambda_), zeta)
+                v = np.clip(np.dot(self.C.T, mue), -1., 1.)
+                self.v_avg += (v - self.v_avg) * 0.1
+                if self.verbose: print "v", self.cnt, v
+                if self.verbose: print "v_avg", self.cnt, self.v_avg
+                EE = 1.0
+
+                # print EE, v
+                if True: # logarithmic error
+                    # EE = .1 / (np.sqrt(np.linalg.norm(v)) + 0.001)
+                    EE = .1 / (np.square(np.linalg.norm(v)) + 0.001)
+                # print EE
+                # print "eta", eta
+                # print "zeta", zeta
+                # print "mue", mue
+
+                dC = (np.dot(mue, v.T) + (np.dot((mue * y * zeta), -2 * x.T))) * EE * self.epsC
+                dh = mue * y * zeta * -2 * EE * self.epsC
 
 
+            elif self.mode == 0: # homestastic learning
+                eta = np.dot(self.A.T, xsi)
+                if self.verbose: print "eta", self.cnt, eta.shape, eta
+                dC = np.dot(eta * g_prime, x.T) * self.epsC
+                dh = eta * g_prime * self.epsC
+                # print dC, dh
+                # self.C +=
 
-        self.xsiAvg = np.sum(np.abs(xsi)) * self.xsiAvgSmooth + (1 - self.xsiAvgSmooth) * self.xsiAvg
+            # FIXME: ???
+            self.h += np.clip(dh, -.1, .1)
+            self.C += np.clip(dC, -.1, .1)
 
-        self.msg_xsi.data = xsi.flatten().tolist()
-        self.msg_xsi.data.append(self.xsiAvg)
-        self.pub["_lpzros_xsi"].publish(self.msg_xsi)
+            if self.verbose: print "C:\n" + str(self.C)
+            if self.verbose: print "A:\n" + str(self.A)
 
-        print("Xsi Average %f" % self.xsiAvg)
+            # print "C", self.C
+            # print "h", self.h
+            # self.msg_motors.data.append(m[0])
+            # self.msg_motors.data.append(m[1])
+            # self.msg_motors.data = self.y[:,0].tolist()
+            # print("sending msg", msg)
+            # self.pub_motors.publish(self.msg_motors)
+            # time.sleep(0.1)
+            # if self.cnt > 20:
+            #     rospy.signal_shutdown("stop")
+            #     sys.exit(0)
+        except Exception as inst:
+            print(type(inst))    # the exception instance
+            print(inst.args)     # arguments stored in .args
+            print(inst)          # __str__ allows args to be printed directly,
+            self.exceptionCounter += 1
+            print "Error number %d" %( self.exceptionCounter)
 
-        # forward model learning
-        self.A += self.epsA * np.dot(xsi, y.T) + (self.A * -0.003) * 0.1
-        # self.A += self.epsA * np.dot(xsi, np.atleast_2d(self.y[:,0])) + (self.A * -0.003) * 0.1
-        self.b += self.epsA * xsi              + (self.b * -0.001) * 0.1
+            # if there are too many exceptions, end experiment
+            if(self.exceptionCounter > self.maxExceptionCounter):
+                print "Experiment forced to quit"
+                self.cnt_main = self.numtimesteps - 1
 
-        # print "A", self.cnt, self.A
-        # print "b", self.b
-
-        if self.mode == 1: # TLE / homekinesis
-            eta = np.dot(np.linalg.pinv(self.A), xsi)
-            zeta = np.clip(eta * g_prime_inv, -1., 1.)
-            print "eta", self.cnt, eta
-            print "zeta", self.cnt, zeta
-            # print "C C^T", np.dot(self.C, self.C.T)
-            # mue = np.dot(np.linalg.pinv(np.dot(self.C, self.C.T)), zeta)
-            lambda_ = np.eye(self.nummot) * np.random.uniform(-0.01, 0.01, self.nummot)
-            mue = np.dot(np.linalg.pinv(np.dot(self.C, self.C.T) + lambda_), zeta)
-            v = np.clip(np.dot(self.C.T, mue), -1., 1.)
-            self.v_avg += (v - self.v_avg) * 0.1
-            print "v", self.cnt, v
-            print "v_avg", self.cnt, self.v_avg
-            EE = 1.0
-
-            # print EE, v
-            if True: # logarithmic error
-                # EE = .1 / (np.sqrt(np.linalg.norm(v)) + 0.001)
-                EE = .1 / (np.square(np.linalg.norm(v)) + 0.001)
-            # print EE
-            # print "eta", eta
-            # print "zeta", zeta
-            # print "mue", mue
-
-            dC = (np.dot(mue, v.T) + (np.dot((mue * y * zeta), -2 * x.T))) * EE * self.epsC
-            dh = mue * y * zeta * -2 * EE * self.epsC
-
-
-        elif self.mode == 0: # homestastic learning
-            eta = np.dot(self.A.T, xsi)
-            print "eta", self.cnt, eta.shape, eta
-            dC = np.dot(eta * g_prime, x.T) * self.epsC
-            dh = eta * g_prime * self.epsC
-            # print dC, dh
-            # self.C +=
-
-        # FIXME: ???
-        self.h += np.clip(dh, -.1, .1)
-        self.C += np.clip(dC, -.1, .1)
-
-        print "C:\n" + str(self.C)
-        print "A:\n" + str(self.A)
-
-        # print "C", self.C
-        # print "h", self.h
-        # self.msg_motors.data.append(m[0])
-        # self.msg_motors.data.append(m[1])
-        # self.msg_motors.data = self.y[:,0].tolist()
-        # print("sending msg", msg)
-        # self.pub_motors.publish(self.msg_motors)
-        # time.sleep(0.1)
-        # if self.cnt > 20:
-        #     rospy.signal_shutdown("stop")
-        #     sys.exit(0)
 
     def prepare_inputs(self):
         #imu_smooth = {1, 0.95, 0.9, 0.8, 0.7, 0.5, 0.3, 0.2, 0.1, 0.05}
@@ -351,7 +400,7 @@ class LPZRos(smp_thread_ros):
         if(len(inputs) != self.numsen):
             raise Exception("numsen doesn't match up with the real input data dimensionality numsen: " + str(self.numsen) + ", len: " + str(len(inputs)))
 
-        print "Inputs: ", inputs
+        if self.verbose: print "Inputs: ", inputs
         return inputs
 
     def prepare_and_send_output(self):
@@ -366,12 +415,11 @@ class LPZRos(smp_thread_ros):
             motor_old = np.array(self.msg_motors.data)
 
             #self.motorAlpha = (self.y[4,0] + 1)/ 2. * 0.7 + 0.1 # between 0.1 and 0.8
-            print "MotorAlpha %f" % self.motorSmooth
             self.msg_motors.data = self.motorSmooth * self.y[:,0] * self.output_gain + (1 - self.motorSmooth) * motor_old
         else:
             raise Exception("Unknown control mode " + str(self.control_mode))
 
-        print "y = %s , motors = %s" % (self.y[:,0], self.msg_motors)
+        if self.verbose: print "y = %s , motors = %s" % (self.y[:,0], self.msg_motors)
 
         self.pub["_homeostasis_motor"].publish(self.msg_motors)
 
@@ -403,6 +451,7 @@ class LPZRos(smp_thread_ros):
 
                 # write end time
                 self.variableDict["endTime"] = time.time()
+                self.variableDict["exceptionCounter"] = self.exceptionCounter
 
                 # save dict to file
                 self.pickleDumpVariables()
@@ -432,14 +481,21 @@ class LPZRos(smp_thread_ros):
 
             if not os.path.exists(filename):
                 pickle.dump(self.variableDict, open(filename, "wb"))
+                pickle.dump(self.variableDict, open("pickles/newest.pickle", "wb"))
+                print "pickle saved: %s and pickles/newest.pickle" % (filename)
                 return
 
             # increment id and try again
             id += 1
+            if id == 10000:
+                raise Exception("While searching for an id to save the pickle 10000 was reached. Did you really do so many?")
 
 
     def combineName(self, prefix, epsC, epsA, creativity, timesteps, id, postfix):
-        return prefix + "recording_eC" + str(epsC) + "_eA" + str(epsA) + "_c" + str(creativity) + "_n" + str(timesteps) + "_id" + str(id) + postfix
+        #return prefix + "recording_eC" + str(epsC) + "_eA" + str(epsA) + "_c" + str(creativity) + "_n" + str(timesteps) + "_id" + str(id) + postfix
+        filename= "%srecording_eC%.2f_eA%.2f_c%.2f_n%d_id%d%s" % (prefix, epsC, epsA, creativity, timesteps, id, postfix)
+        if self.verbose: print filename
+        return filename
 
 if __name__ == "__main__":
     import signal
@@ -451,7 +507,8 @@ if __name__ == "__main__":
     parser.add_argument("-eC", "--epsC", type=float, help="learning rate for controller", default = 0.2)
     parser.add_argument("-eA", "--epsA", type=float, help="learning rate for model", default = 0.01)
     parser.add_argument("-c", "--creativity", type=float, help="creativity", default = 0.5)
-
+    parser.add_argument("-auto", "--automaticMode", type=bool, help="draw parameters from random sample", default=False)
+    parser.add_argument("-v", "--verbose", type=bool, help="print many motor and sensor commands", default=False)
 
     args = parser.parse_args()
 
