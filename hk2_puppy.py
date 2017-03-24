@@ -163,6 +163,7 @@ class LPZRos(smp_thread_ros):
         # 3: lag and automaticMode + scales included
         # 4: exceptionCounter added
         # 5: exceptionCounter working :) forgot to increase versionnumber and wasn't working good
+        # 6: added file id (when there are multiple results with the same eps and c) and filename
 
         self.variableDict = {
             "dataversion": 5,
@@ -182,6 +183,8 @@ class LPZRos(smp_thread_ros):
             "automaticModeScaleEpsA": self.automaticModeScaleEpsA,
             "automaticModeScaleEpsC": self.automaticModeScaleEpsC,
             "exceptionCounter": 0,
+            "id": 0,
+            "filename": 0,
             "C": np.zeros((self.numtimesteps,) + self.C.shape),
             "A": np.zeros((self.numtimesteps,) + self.A.shape),
             "h": np.zeros((self.numtimesteps,) + self.h.shape),
@@ -480,6 +483,8 @@ class LPZRos(smp_thread_ros):
             filename = self.combineName("pickles/", self.epsC, self.epsA, self.creativity, self.numtimesteps, id, ".pickle")
 
             if not os.path.exists(filename):
+                self.variableDict["id"] = id
+                self.variableDict["filename"] = filename
                 pickle.dump(self.variableDict, open(filename, "wb"))
                 pickle.dump(self.variableDict, open("pickles/newest.pickle", "wb"))
                 print "pickle saved: %s and pickles/newest.pickle" % (filename)
