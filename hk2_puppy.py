@@ -49,6 +49,7 @@ class LPZRos(smp_thread_ros):
             "/homeostasis_motor": [Float32MultiArray,],
             "/lpzros/x": [Float32MultiArray],
             "/lpzros/xsi": [Float32MultiArray,],
+            "/lpzros/EE": [Float32,],
             }
         subs = {
             "/tinyImu": [tinyIMU, self.cb_imu],
@@ -164,9 +165,10 @@ class LPZRos(smp_thread_ros):
         # 4: exceptionCounter added
         # 5: exceptionCounter working :) forgot to increase versionnumber and wasn't working good
         # 6: added file id (when there are multiple results with the same eps and c) and filename
+        # 7: added weight_in_body should be used to indicate if the battery is built in or not. For all measurements before, it was true
 
         self.variableDict = {
-            "dataversion": 5,
+            "dataversion": 7,
             "timesteps" : self.numtimesteps,
             "looptime" : self.loop_time,
             "startTime" : time.time(),
@@ -185,6 +187,7 @@ class LPZRos(smp_thread_ros):
             "exceptionCounter": 0,
             "id": 0,
             "filename": 0,
+            "weight_in_body": False,
             "C": np.zeros((self.numtimesteps,) + self.C.shape),
             "A": np.zeros((self.numtimesteps,) + self.A.shape),
             "h": np.zeros((self.numtimesteps,) + self.h.shape),
@@ -331,6 +334,8 @@ class LPZRos(smp_thread_ros):
                 if True: # logarithmic error
                     # EE = .1 / (np.sqrt(np.linalg.norm(v)) + 0.001)
                     EE = .1 / (np.square(np.linalg.norm(v)) + 0.001)
+
+                self.pub["_lpzros_EE"].publish(EE)
                 # print EE
                 # print "eta", eta
                 # print "zeta", zeta
@@ -411,13 +416,14 @@ class LPZRos(smp_thread_ros):
         # velocity control
         if self.control_mode == 0:
             motor_old = np.array(self.msg_motors.data)
-            self.msg_motors.data = np.clip((motor_old + self.y[:,0]) * self.output_gain, -32000, 32000).tolist()
+            self.msg_motors.data = np.clip(motor_old + (self.y[:,0] * self.output_gain), -32000, 32000).tolist()
 
         # position control
         elif self.control_mode == 1:
             motor_old = np.array(self.msg_motors.data)
 
             #self.motorAlpha = (self.y[4,0] + 1)/ 2. * 0.7 + 0.1 # between 0.1 and 0.8
+            #self.y[,0]=0
             self.msg_motors.data = self.motorSmooth * self.y[:,0] * self.output_gain + (1 - self.motorSmooth) * motor_old
         else:
             raise Exception("Unknown control mode " + str(self.control_mode))
