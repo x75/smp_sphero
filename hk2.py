@@ -1,15 +1,23 @@
 #!/usr/bin/env python
-"""homekinesis with python, compare playfulmachines
-$ python hk.py -h"""
+"""hk2.py
 
-# FIXME: put the learner / control structure into class to easily load
-#        der/martius or reservoir model
+Homeostasis and homeokinesis behaviours (compare Der and Martius 2012, Playful
+machines) done with python via ROS for
+ - Sphero (real robot)
+ - lpzrobots barrel (simulated)
 
-# control: velocity and angle
-# control: raw motors
-# convenience: smp_thread_ros
-# convenience: ros based setters for parameters
-# convenience: publish preprocessed quantities
+Run like
+python hk.py --help
+
+FIXME: put the learner / control structure into class to easily load
+       der/martius or reservoir model
+
+control: velocity and angle
+control: raw motors
+convenience: smp_thread_ros
+convenience: ros based setters for parameters
+convenience: publish preprocessed quantities
+"""
 
 import time, argparse, sys
 import numpy as np
