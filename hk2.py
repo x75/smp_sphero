@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""hk2.py
+"""**hk2.py**
 
 Homeostasis and homeokinesis behaviours (compare Der and Martius 2012, Playful
 machines) done with python via ROS for
