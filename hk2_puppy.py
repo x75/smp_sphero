@@ -41,14 +41,15 @@ def idtanh(x):
 ################################################################################
 # main homeostasis, homeokinesis class based on smp_thread_ros
 class LPZRos(smp_thread_ros):
-    modes = {"hs": 0, "hk": 1, "eh_pi_d": 2}
-    control_modes = {"velocity" : 0, "position" : 1}
+    modes = {"hs": 0, "hk": 1, "eh_pi_d": 2, }
+    control_modes = {"velocity" : 0, "position" : 1, "step": 2, "sin_sweep": 3}
 
     def __init__(self, args):
         pubs = {
             "/homeostasis_motor": [Float32MultiArray,],
             "/lpzros/x": [Float32MultiArray],
             "/lpzros/xsi": [Float32MultiArray,],
+            "/lpzros/EE": [Float32,],
             }
         subs = {
             "/tinyImu": [tinyIMU, self.cb_imu],
@@ -61,6 +62,8 @@ class LPZRos(smp_thread_ros):
         self.loop_time = args.looptime
         self.automaticMode = args.automaticMode
         self.verbose = args.verbose
+        self.save_pickle = args.save_pickle
+        self.period = args.period
 
         smp_thread_ros.__init__(self, loop_time = self.loop_time, pubs = pubs, subs = subs)
 
@@ -91,7 +94,7 @@ class LPZRos(smp_thread_ros):
         #self.msg_sensor_exp = Float64MultiArray()
 
         # sphero lag is 4 timesteps
-        self.lag = 2 # 2 tested on puppy not so much influence
+        self.lag = 4 # 2 tested on puppy not so much influence
         # buffer size accomodates causal minimum 1 + lag time steps
         self.bufsize = 1 + self.lag # 2
         self.creativity = args.creativity
@@ -107,9 +110,17 @@ class LPZRos(smp_thread_ros):
         self.automaticModeScaleEpsA = 0.5
         self.automaticModeScaleEpsC = 0.5
 
+        # initialize for logging
+        self.hz = 0
+
         if self.automaticMode:
-            self.epsA = np.random.exponential(scale=self.automaticModeScaleEpsA, size = 1)[0]
-            self.epsC = np.random.exponential(scale=self.automaticModeScaleEpsC, size = 1)[0]
+            if self.control_mode == 2:
+                self.period = np.random.randint(1,20) * 2
+            elif self.control_mode == 3:
+                self.period = 0
+            else:
+                self.epsA = np.random.exponential(scale=self.automaticModeScaleEpsA, size = 1)[0]
+                self.epsC = np.random.exponential(scale=self.automaticModeScaleEpsC, size = 1)[0]
 
         print "EpsA:\t%f\nEpsC:\t%f\nCreativity:\t%f\nEpisodelength:\t%d\nLag:\t%d" % (self.epsA, self.epsC,self.creativity, self.numtimesteps,self.lag)
 
@@ -155,6 +166,11 @@ class LPZRos(smp_thread_ros):
         self.exceptionCounter = 0
         self.maxExceptionCounter = 10
 
+        if self.control_mode == 3:
+            self.epsA = 0
+            self.epsC = 0
+            self.sin_phase = 0
+            self.sin_speed = 0.1
 
         # If something is changed in the variableDict style or content, change dataversion!
         # Version History:
@@ -164,9 +180,13 @@ class LPZRos(smp_thread_ros):
         # 4: exceptionCounter added
         # 5: exceptionCounter working :) forgot to increase versionnumber and wasn't working good
         # 6: added file id (when there are multiple results with the same eps and c) and filename
+        # 7: added weight_in_body should be used to indicate if the battery is built in or not. For all measurements before, it was true
+        # 8: added control_mode variable 1 = position control, 2 = velocity control, 3= step, also period for step period
+        # 9: added hz of swinging motion in new control mode 4 = sin_sweep
 
         self.variableDict = {
-            "dataversion": 5,
+            "dataversion": 9,
+            "control_mode": self.control_mode,
             "timesteps" : self.numtimesteps,
             "looptime" : self.loop_time,
             "startTime" : time.time(),
@@ -179,19 +199,22 @@ class LPZRos(smp_thread_ros):
             "imuSmooth": self.imu_smooth,
             "motorSmooth": self.motorSmooth,
             "lag": self.lag,
+            "period": self.period,
+            "hz": self.hz,
             "automaticMode": self.automaticMode,
             "automaticModeScaleEpsA": self.automaticModeScaleEpsA,
             "automaticModeScaleEpsC": self.automaticModeScaleEpsC,
             "exceptionCounter": 0,
             "id": 0,
             "filename": 0,
+            "weight_in_body": False,
             "C": np.zeros((self.numtimesteps,) + self.C.shape),
             "A": np.zeros((self.numtimesteps,) + self.A.shape),
             "h": np.zeros((self.numtimesteps,) + self.h.shape),
             "b": np.zeros((self.numtimesteps,) + self.b.shape),
             "x": np.zeros((self.numtimesteps,) + self.x.shape),
             "y": np.zeros((self.numtimesteps,) + self.y.shape),
-            "xsi": np.zeros((self.numtimesteps,) + self.xsi.shape)
+            "xsi": np.zeros((self.numtimesteps,) + self.xsi.shape),
         }
 
 
@@ -225,11 +248,13 @@ class LPZRos(smp_thread_ros):
         imu_vec_acc = np.array((self.imu.accel.x, self.imu.accel.y, self.imu.accel.z))
         imu_vec_gyr = np.array((self.imu.gyro.x, self.imu.gyro.y, self.imu.gyro.z))
 
-        imu_vec_ = np.hstack((imu_vec_acc, imu_vec_gyr)).reshape(self.imu_vec.shape)
+
+        self.imu_vec = np.hstack((imu_vec_acc, imu_vec_gyr)).reshape(self.imu_vec.shape)
+        #imu_vec_ = np.hstack((imu_vec_acc, imu_vec_gyr)).reshape(self.imu_vec.shape)
         #print "imu_vec_", imu_vec_
         #self.imu_smooth = (self.y[5,0] + 1) / 2
-        self.imu_smooth = 0.5
-        self.imu_vec = self.imu_vec * self.imu_smooth + (1 - self.imu_smooth) * imu_vec_
+        #self.imu_smooth = 0.5
+        #self.imu_vec = self.imu_vec * self.imu_smooth + (1 - self.imu_smooth) * imu_vec_
 
         self.cb_imu_cnt += 1
 
@@ -246,6 +271,8 @@ class LPZRos(smp_thread_ros):
             self.msg_inputs.data = self.x[:,now].flatten().tolist()
             self.pub["_lpzros_x"].publish(self.msg_inputs)
 
+            if self.control_mode == 2:
+                return
             # self.x[[0,1],now] = 0.
             # print "msg", msg
 
@@ -331,6 +358,8 @@ class LPZRos(smp_thread_ros):
                 if True: # logarithmic error
                     # EE = .1 / (np.sqrt(np.linalg.norm(v)) + 0.001)
                     EE = .1 / (np.square(np.linalg.norm(v)) + 0.001)
+
+                self.pub["_lpzros_EE"].publish(EE)
                 # print EE
                 # print "eta", eta
                 # print "zeta", zeta
@@ -411,14 +440,40 @@ class LPZRos(smp_thread_ros):
         # velocity control
         if self.control_mode == 0:
             motor_old = np.array(self.msg_motors.data)
-            self.msg_motors.data = np.clip((motor_old + self.y[:,0]) * self.output_gain, -32000, 32000).tolist()
+            self.msg_motors.data = np.clip(motor_old + (self.y[:,0] * self.output_gain), -32000, 32000).tolist()
 
         # position control
         elif self.control_mode == 1:
             motor_old = np.array(self.msg_motors.data)
 
             #self.motorAlpha = (self.y[4,0] + 1)/ 2. * 0.7 + 0.1 # between 0.1 and 0.8
+            #self.y[,0]=0
             self.msg_motors.data = self.motorSmooth * self.y[:,0] * self.output_gain + (1 - self.motorSmooth) * motor_old
+        elif self.control_mode == 2:
+            if(self.cnt_main % self.period < (self.period / 2)):
+                self.y[:,0] = np.ones(4) * 0.5
+            else:
+                self.y[:,0] = np.ones(4) * 0.4
+
+            self.msg_motors.data = self.y[:,0] * self.output_gain
+        elif self.control_mode == 3:
+            motor_min = 0.3
+            motor_max = 0.8
+
+            self.sin_speed = np.interp(self.cnt_main, [0, self.numtimesteps], [0,2])
+            #self.sin_speed = 1.3
+            #self.sin_speed = 1.12
+            #self.sin_speed = 0.32 # ~1Hz
+
+            self.hz = self.sin_speed/(self.loop_time * 2 * np.pi)
+
+            if(self.cnt_main % 20 == 1):
+                print "%.2fHz %.2f speed" % (self.hz, self.sin_speed)
+
+            self.sin_phase = self.sin_phase + self.sin_speed
+            sin_value = np.interp(np.sin(self.sin_phase),[-1,1],[motor_min,motor_max])
+            self.y[:,0] = np.ones(4) * sin_value
+            self.msg_motors.data = self.y[:,0] * self.output_gain
         else:
             raise Exception("Unknown control mode " + str(self.control_mode))
 
@@ -436,6 +491,7 @@ class LPZRos(smp_thread_ros):
             inputs = self.prepare_inputs()
 
             # execute network / controller
+            #if self.control_mode == 0 or self.control_mode == 1:
             self.algorithm_learning_step(inputs)
 
             # adjust generic network output to local conditions and send
@@ -478,22 +534,26 @@ class LPZRos(smp_thread_ros):
         self.variableDict[name][self.cnt_main,:,:] = value
 
     def pickleDumpVariables(self):
-        id = 0
-        while True:
-            filename = self.combineName("pickles/", self.epsC, self.epsA, self.creativity, self.numtimesteps, id, ".pickle")
+        print(self.save_pickle)
+        if self.save_pickle:
+            id = 0
+            while True:
+                if self.control_mode == 0 or self.control_mode == 1:
+                    filename = self.combineName("pickles/", self.epsC, self.epsA, self.creativity, self.numtimesteps, id, ".pickle")
+                else:
+                    filename = "step_pickles/step_period_%d_%d.pickle" % (self.period, id)
+                if not os.path.exists(filename):
+                    self.variableDict["id"] = id
+                    self.variableDict["filename"] = filename
+                    pickle.dump(self.variableDict, open(filename, "wb"))
+                    pickle.dump(self.variableDict, open("pickles/newest.pickle", "wb"))
+                    print "pickle saved: %s and pickles/newest.pickle" % (filename)
+                    return
 
-            if not os.path.exists(filename):
-                self.variableDict["id"] = id
-                self.variableDict["filename"] = filename
-                pickle.dump(self.variableDict, open(filename, "wb"))
-                pickle.dump(self.variableDict, open("pickles/newest.pickle", "wb"))
-                print "pickle saved: %s and pickles/newest.pickle" % (filename)
-                return
-
-            # increment id and try again
-            id += 1
-            if id == 10000:
-                raise Exception("While searching for an id to save the pickle 10000 was reached. Did you really do so many?")
+                # increment id and try again
+                id += 1
+                if id == 10000:
+                    raise Exception("While searching for an id to save the pickle 10000 was reached. Did you really do so many?")
 
 
     def combineName(self, prefix, epsC, epsA, creativity, timesteps, id, postfix):
@@ -514,6 +574,10 @@ if __name__ == "__main__":
     parser.add_argument("-c", "--creativity", type=float, help="creativity", default = 0.5)
     parser.add_argument("-auto", "--automaticMode", type=bool, help="draw parameters from random sample", default=False)
     parser.add_argument("-v", "--verbose", type=bool, help="print many motor and sensor commands", default=False)
+    parser.add_argument("-pickle", "--save_pickle", type= bool, help="should a pickle log file be saved", default=True)
+    parser.add_argument("-p", "--period", type=int, help="period of step mode", default=10)
+    #parser.add_argument("-s", "--save", type=int, help="save", default=10)
+
 
     args = parser.parse_args()
 
