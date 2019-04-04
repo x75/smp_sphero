@@ -17,9 +17,9 @@ import tf
 # if localpaths[0] not in sys.path:
 #     sys.path.insert(0, localpaths[0])
 
-from reservoirs import Reservoir
-from learners import learnerEH
-from smp_thread import smp_thread_ros
+from smp_base.models_reservoirs import Reservoir
+from smp_base.models_learners import learnerEH
+from smp_base.smp_thread import smp_thread_ros
 
 import numpy as np
 import numpy.linalg as LA

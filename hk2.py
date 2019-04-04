@@ -31,8 +31,8 @@ from geometry_msgs.msg import Twist, Quaternion #, Point, Pose, TwistWithCovaria
 
 import tf
 
-from smp_thread import smp_thread_ros
-from reservoirs import Reservoir
+from smp_base.smp_thread import smp_thread_ros
+from smp_base.models_reservoirs import Reservoir
 
 ################################################################################
 # helper funcs

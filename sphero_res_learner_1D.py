@@ -6,6 +6,15 @@ import signal, time, sys, argparse, os
 import numpy as np
 import numpy.linalg as LA
 
+# # additional paths
+# localpaths = ["/path/to/smp/smp"]
+# if localpaths[0] not in sys.path:
+#     sys.path.insert(0, localpaths[0])
+    
+from smp_base.models_reservoirs import Reservoir
+from smp_base.models_learners import learnerEH
+from smp_base.smp_thread import smp_thread_ros
+
 import rospy
 from std_msgs.msg import Float32, Float32MultiArray, ColorRGBA
 from sensor_msgs.msg import Imu
@@ -13,15 +22,6 @@ from nav_msgs.msg import Odometry
 from geometry_msgs.msg import Twist, Quaternion #, Point, Pose, TwistWithCovariance, Vector3
 from smp_msgs.msg import reservoir
 import tf
-
-# # additional paths
-# localpaths = ["/path/to/smp/smp"]
-# if localpaths[0] not in sys.path:
-#     sys.path.insert(0, localpaths[0])
-    
-from reservoirs import Reservoir
-from learners import learnerEH
-from smp_thread import smp_thread_ros
 
 class SpheroResLearner1D(learnerEH, smp_thread_ros):
     """Sphero experiments"""
