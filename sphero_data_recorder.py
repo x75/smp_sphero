@@ -77,7 +77,7 @@ class SpheroProbeEnvironment(threading.Thread):
 
     def run(self):
         while self.isrunning:
-            print("run cycle #%d" % (self.runcnt))
+            print(("run cycle #%d" % (self.runcnt)))
             if self.runcnt % 20 == 0:
                 self.motor_target_ = self.motor_target.copy()
                 self.motor_target[0,0] = np.random.randint(20, 100)
@@ -90,7 +90,7 @@ class SpheroProbeEnvironment(threading.Thread):
                 dy = (self.motor_target[1,0] - self.motor_target_[1,0]) / 20.
             self.T.linear.x += dx
             self.T.linear.y += dy
-            print("self.T", self.T)
+            print(("self.T", self.T))
             self.smdata[self.runcnt,23] = self.T.linear.x
             self.smdata[self.runcnt,24] = self.T.linear.y
             
@@ -107,7 +107,7 @@ def main():
     s = SpheroProbeEnvironment()
     r = rospy.Rate(20)
     def handler(signum, frame):
-        print 'Signal handler called with signal', signum
+        print('Signal handler called with signal', signum)
         s.isrunning = False
         # sys.exit(0)
         # raise IOError("Couldn't open device!")

@@ -21,7 +21,7 @@ from sensor_msgs.msg import Imu
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import Twist, Quaternion #, Point, Pose, TwistWithCovariance, Vector3
 from tiny_msgs.msg import tinyIMU
-import cPickle as pickle
+import pickle as pickle
 import os
 import warnings
 
@@ -122,21 +122,21 @@ class LPZRos(smp_thread_ros):
                 self.epsA = np.random.exponential(scale=self.automaticModeScaleEpsA, size = 1)[0]
                 self.epsC = np.random.exponential(scale=self.automaticModeScaleEpsC, size = 1)[0]
 
-        print "EpsA:\t%f\nEpsC:\t%f\nCreativity:\t%f\nEpisodelength:\t%d\nLag:\t%d" % (self.epsA, self.epsC,self.creativity, self.numtimesteps,self.lag)
+        print("EpsA:\t%f\nEpsC:\t%f\nCreativity:\t%f\nEpisodelength:\t%d\nLag:\t%d" % (self.epsA, self.epsC,self.creativity, self.numtimesteps,self.lag))
 
         ############################################################
         # forward model
         self.A  = np.random.uniform(-1e-1, 1e-1, (self.numsen, self.nummot))
         self.b = np.zeros((self.numsen,1))
 
-        print "initial A"
-        print self.A
+        print("initial A")
+        print(self.A)
 
         # controller
         self.C  = np.random.uniform(-1e-1, 1e-1, (self.nummot, self.numsen))
 
-        print "initial C"
-        print self.C
+        print("initial C")
+        print(self.C)
 
         self.h  = np.zeros((self.nummot,1))
         self.g  = np.tanh # sigmoidal activation function
@@ -329,7 +329,7 @@ class LPZRos(smp_thread_ros):
             self.msg_xsi.data.append(self.xsiAvg)
             self.pub["_lpzros_xsi"].publish(self.msg_xsi)
 
-            if(self.verbose): print("Xsi Average %f" % self.xsiAvg)
+            if(self.verbose): print(("Xsi Average %f" % self.xsiAvg))
 
             # forward model learning
             self.A += self.epsA * np.dot(xsi, y.T) + (self.A * -0.003) * 0.1
@@ -342,16 +342,16 @@ class LPZRos(smp_thread_ros):
             if self.mode == 1: # TLE / homekinesis
                 eta = np.dot(np.linalg.pinv(self.A), xsi)
                 zeta = np.clip(eta * g_prime_inv, -1., 1.)
-                if self.verbose: print "eta", self.cnt, eta
-                if self.verbose: print "zeta", self.cnt, zeta
+                if self.verbose: print("eta", self.cnt, eta)
+                if self.verbose: print("zeta", self.cnt, zeta)
                 # print "C C^T", np.dot(self.C, self.C.T)
                 # mue = np.dot(np.linalg.pinv(np.dot(self.C, self.C.T)), zeta)
                 lambda_ = np.eye(self.nummot) * np.random.uniform(-0.01, 0.01, self.nummot)
                 mue = np.dot(np.linalg.pinv(np.dot(self.C, self.C.T) + lambda_), zeta)
                 v = np.clip(np.dot(self.C.T, mue), -1., 1.)
                 self.v_avg += (v - self.v_avg) * 0.1
-                if self.verbose: print "v", self.cnt, v
-                if self.verbose: print "v_avg", self.cnt, self.v_avg
+                if self.verbose: print("v", self.cnt, v)
+                if self.verbose: print("v_avg", self.cnt, self.v_avg)
                 EE = 1.0
 
                 # print EE, v
@@ -371,7 +371,7 @@ class LPZRos(smp_thread_ros):
 
             elif self.mode == 0: # homestastic learning
                 eta = np.dot(self.A.T, xsi)
-                if self.verbose: print "eta", self.cnt, eta.shape, eta
+                if self.verbose: print("eta", self.cnt, eta.shape, eta)
                 dC = np.dot(eta * g_prime, x.T) * self.epsC
                 dh = eta * g_prime * self.epsC
                 # print dC, dh
@@ -381,8 +381,8 @@ class LPZRos(smp_thread_ros):
             self.h += np.clip(dh, -.1, .1)
             self.C += np.clip(dC, -.1, .1)
 
-            if self.verbose: print "C:\n" + str(self.C)
-            if self.verbose: print "A:\n" + str(self.A)
+            if self.verbose: print("C:\n" + str(self.C))
+            if self.verbose: print("A:\n" + str(self.A))
 
             # print "C", self.C
             # print "h", self.h
@@ -396,15 +396,15 @@ class LPZRos(smp_thread_ros):
             #     rospy.signal_shutdown("stop")
             #     sys.exit(0)
         except Exception as inst:
-            print(type(inst))    # the exception instance
-            print(inst.args)     # arguments stored in .args
+            print((type(inst)))    # the exception instance
+            print((inst.args))     # arguments stored in .args
             print(inst)          # __str__ allows args to be printed directly,
             self.exceptionCounter += 1
-            print "Error number %d" %( self.exceptionCounter)
+            print("Error number %d" %( self.exceptionCounter))
 
             # if there are too many exceptions, end experiment
             if(self.exceptionCounter > self.maxExceptionCounter):
-                print "Experiment forced to quit"
+                print("Experiment forced to quit")
                 self.cnt_main = self.numtimesteps - 1
 
 
@@ -432,7 +432,7 @@ class LPZRos(smp_thread_ros):
         if(len(inputs) != self.numsen):
             raise Exception("numsen doesn't match up with the real input data dimensionality numsen: " + str(self.numsen) + ", len: " + str(len(inputs)))
 
-        if self.verbose: print "Inputs: ", inputs
+        if self.verbose: print("Inputs: ", inputs)
         return inputs
 
     def prepare_and_send_output(self):
@@ -468,7 +468,7 @@ class LPZRos(smp_thread_ros):
             self.hz = self.sin_speed/(self.loop_time * 2 * np.pi)
 
             if(self.cnt_main % 20 == 1):
-                print "%.2fHz %.2f speed" % (self.hz, self.sin_speed)
+                print("%.2fHz %.2f speed" % (self.hz, self.sin_speed))
 
             self.sin_phase = self.sin_phase + self.sin_speed
             sin_value = np.interp(np.sin(self.sin_phase),[-1,1],[motor_min,motor_max])
@@ -477,7 +477,7 @@ class LPZRos(smp_thread_ros):
         else:
             raise Exception("Unknown control mode " + str(self.control_mode))
 
-        if self.verbose: print "y = %s , motors = %s" % (self.y[:,0], self.msg_motors)
+        if self.verbose: print("y = %s , motors = %s" % (self.y[:,0], self.msg_motors))
 
         self.pub["_homeostasis_motor"].publish(self.msg_motors)
 
@@ -534,7 +534,7 @@ class LPZRos(smp_thread_ros):
         self.variableDict[name][self.cnt_main,:,:] = value
 
     def pickleDumpVariables(self):
-        print(self.save_pickle)
+        print((self.save_pickle))
         if self.save_pickle:
             id = 0
             while True:
@@ -547,7 +547,7 @@ class LPZRos(smp_thread_ros):
                     self.variableDict["filename"] = filename
                     pickle.dump(self.variableDict, open(filename, "wb"))
                     pickle.dump(self.variableDict, open("pickles/newest.pickle", "wb"))
-                    print "pickle saved: %s and pickles/newest.pickle" % (filename)
+                    print("pickle saved: %s and pickles/newest.pickle" % (filename))
                     return
 
                 # increment id and try again
@@ -559,7 +559,7 @@ class LPZRos(smp_thread_ros):
     def combineName(self, prefix, epsC, epsA, creativity, timesteps, id, postfix):
         #return prefix + "recording_eC" + str(epsC) + "_eA" + str(epsA) + "_c" + str(creativity) + "_n" + str(timesteps) + "_id" + str(id) + postfix
         filename= "%srecording_eC%.2f_eA%.2f_c%.2f_n%d_id%d%s" % (prefix, epsC, epsA, creativity, timesteps, id, postfix)
-        if self.verbose: print filename
+        if self.verbose: print(filename)
         return filename
 
 if __name__ == "__main__":
@@ -583,17 +583,17 @@ if __name__ == "__main__":
 
     # sanity check
     if not args.mode in LPZRos.modes:
-        print "invalid mode string, use one of " + str(LPZRos.modes)
+        print("invalid mode string, use one of " + str(LPZRos.modes))
         sys.exit(0)
 
     if not args.control_mode in LPZRos.control_modes:
-        print "invalid control_mode string, use one of " + str(LPZRos.control_modes)
+        print("invalid control_mode string, use one of " + str(LPZRos.control_modes))
         sys.exit(0)
 
     lpzros = LPZRos(args)
 
     def handler(signum, frame):
-        print 'Signal handler called with signal', signum
+        print('Signal handler called with signal', signum)
         lpzros.isrunning = False
         sys.exit(0)
         # raise IOError("Couldn't open device!")

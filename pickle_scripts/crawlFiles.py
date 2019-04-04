@@ -2,7 +2,7 @@
 
 import time, argparse, sys, os
 
-import cPickle as pickle
+import pickle as pickle
 import numpy as np
 
 from sklearn import decomposition
@@ -42,12 +42,12 @@ def crawlFiles(args):
 
     if os.path.exists(pickleFolder + overviewFile):
         overviewDict = pickle.load(open(pickleFolder + overviewFile, "rb"))
-        print "overviewDict found"
+        print("overviewDict found")
         if(len(overviewDict) == len(files)):
-            print "overviewDict is complete"
+            print("overviewDict is complete")
             overviewComplete = True
         else:
-            print "overviewDict is not complete rebuilding"
+            print("overviewDict is not complete rebuilding")
             overviewDict = {}
         #print overviewDict
     else:
@@ -72,7 +72,7 @@ def crawlFiles(args):
     SspecDict = {}
     allSpecs = np.zeros((frequency_of_all_modularities,0))
     allSpecsSum = np.zeros((frequency_count, 1))
-    print "allSpecsSumshape", allSpecsSum.shape
+    print("allSpecsSumshape", allSpecsSum.shape)
 
     def concatenate_all_chanels(Mspecs, Sspecs):
 
@@ -91,7 +91,7 @@ def crawlFiles(args):
         for Sspec in Sspecs:
             specsSum = specsSum + np.sum(np.matrix(Sspec[2]), axis=1)
 
-        print "specssumshape" , specsSum.shape
+        print("specssumshape" , specsSum.shape)
         return specsSum
 
     # Check if file is good
@@ -102,16 +102,16 @@ def crawlFiles(args):
         if "weight_in_body" in variableDict: return False
         return True
 
-    print "This is gonna take some time"
+    print("This is gonna take some time")
     for f in files:
         filename = os.path.basename(f)
         if(overviewComplete):
 
             if not(check_variable_dict(overviewDict[filename])):
-                print "file skiped"
+                print("file skiped")
                 continue
 
-        print("Unpickling %d of %d" % ( i, len(files)))
+        print(("Unpickling %d of %d" % ( i, len(files))))
         variableDict = pickle.load(open( f, "rb" ) )
 
         # fix for files without filename
@@ -121,10 +121,10 @@ def crawlFiles(args):
         saveToOverview(variableDict)
 
         if(not "dataversion" in variableDict):
-            print f
+            print(f)
 
         if check_variable_dict(variableDict):
-            print "File used"
+            print("File used")
             epsArray[j,0] = variableDict["epsA"]
             epsArray[j,1] = variableDict["epsC"]
             nummot = variableDict["nummot"]
@@ -152,7 +152,7 @@ def crawlFiles(args):
             j += 1
             if j >= 10 and args.test: break
         else:
-            print "file not used"
+            print("file not used")
 
         i += 1
 
@@ -168,9 +168,9 @@ def crawlFiles(args):
 
     # save overview file
     pickle.dump(overviewDict, open(pickleFolder + overviewFile, "wb"))
-    print "overview pickle saved."
+    print("overview pickle saved.")
 
-    print("allSpecs shape", allSpecs.shape)
+    print(("allSpecs shape", allSpecs.shape))
 
 
     kmeansClusters = 6
@@ -185,7 +185,7 @@ def crawlFiles(args):
     # pca1 = TSNE(n_components=2, random_state=0)
     # np.set_printoptions(suppress=True)
     pca1.fit(allSpecs)
-    print dir(pca1)
+    print(dir(pca1))
 
     # print clusters
     if False:
@@ -209,8 +209,8 @@ def crawlFiles(args):
         c = np.concatenate((c, np.ones(1000) * behavior))
         ckl = ckl + [behavior]
 
-    print ckl
-    print "PCA"
+    print(ckl)
+    print("PCA")
 
     pca = decomposition.PCA(n_components=2)
     pca.fit(y)
@@ -219,10 +219,10 @@ def crawlFiles(args):
     pca = decomposition.PCA(n_components=2)
     pca.fit(x)
     x = pca.transform(x)
-    print "PCA finished"
+    print("PCA finished")
 
-    print len(epsArray[:,0])
-    print "len clk %d" % len(ckl)
+    print(len(epsArray[:,0]))
+    print("len clk %d" % len(ckl))
 
     # FIXME, why here
     from matplotlib import cm
@@ -254,7 +254,7 @@ def crawlFiles(args):
         # normalize
 
         #dominantFrequencies /= np.max(dominantFrequencies)
-        print "dominantFrequencies", dominantFrequencies
+        print("dominantFrequencies", dominantFrequencies)
 
         #ax1 = fig.add_subplot(gs[0,0])
         plt.title("Frequency Heatmap")

@@ -13,7 +13,7 @@ def main():
     color.r = 1.
 
     while not rospy.is_shutdown():
-        print "loop"
+        print("loop")
         # r, g, b = np.random.uniform(0, 1, (3,))
         r, g, b = (0.04, 0, 1)
         color.r = r

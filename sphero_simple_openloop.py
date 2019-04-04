@@ -20,7 +20,7 @@ def main():
         pub_twist.publish(T)
         phi += 1
         r.sleep()
-    print "a"
+    print("a")
 
 
 if __name__ == "__main__":

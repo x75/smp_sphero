@@ -16,7 +16,7 @@ fourier = np.fft.fft(y)
 freq= np.fft.fftfreq(len(y))
 
 idx = np.argmax(fourier)
-print(freq[idx])
+print((freq[idx]))
 
 plt.figure()
 plt.plot(x,y)

@@ -146,7 +146,7 @@ class robotSphero(robot):
         self.motors.linear.x  = y[1,0] * self.output_gain * 1.414
         self.motors.angular.z = y[0,0] * 1 # self.output_gain
         self.pubs["_cmd_vel_raw"].publish(self.motors)
-        print "%s.prepare_output y = %s , motors = %s" % (y, self.motors)
+        print("%s.prepare_output y = %s , motors = %s" % (y, self.motors))
         
 class robotLPZ(robot):
     def __init__(self, ref):
@@ -172,7 +172,7 @@ class robotLPZ(robot):
 
     def prepare_inputs(self):
         inputs = np.array(self.sensors.data)
-        print "%s.prepare_inputs inputs = %s" % (self.__class__.__name__, inputs)
+        print("%s.prepare_inputs inputs = %s" % (self.__class__.__name__, inputs))
         return inputs
 
     def prepare_output(self, y):
@@ -187,7 +187,7 @@ class LPZRos(smp_thread_ros):
     modes = {"hs": 0, "hk": 1, "eh_pi_d": 2}
 
     def __init__(self, mode="hs", loop_time = 1./20, robot = "lpz"):
-        print "loop_time", loop_time
+        print("loop_time", loop_time)
         if robot == "lpz":
             self.robot = robotLPZ(self)
         elif robot == "sphero":
@@ -230,14 +230,14 @@ class LPZRos(smp_thread_ros):
         # forward model
         # self.A = np.eye(self.numsen) * 1.
         self.A  = np.zeros((self.numsen, self.nummot))
-        self.A[range(self.nummot),range(self.nummot)] = 1.
+        self.A[list(range(self.nummot)),list(range(self.nummot))] = 1.
         self.b = np.zeros((self.numsen,1))
         # controller
         # self.C  = np.eye(self.nummot) * 0.4
         self.C  = np.zeros((self.nummot, self.numsen))
-        self.C[range(self.nummot),range(self.nummot)] = 1 * 0.4
+        self.C[list(range(self.nummot)),list(range(self.nummot))] = 1 * 0.4
         # self.C  = np.random.uniform(-1e-2, 1e-2, (self.nummot, self.numsen))
-        print "self.C", self.C
+        print("self.C", self.C)
         self.h  = np.zeros((self.nummot,1))
         self.g  = np.tanh # sigmoidal activation function
         self.g_ = dtanh # derivative of sigmoidal activation function
@@ -332,7 +332,7 @@ class LPZRos(smp_thread_ros):
         # forward prediction error xsi
         # FIXME: include state x in forward model
         xsi = x_fut - (np.dot(self.A, y) + self.b)
-        print "xsi =", xsi
+        print("xsi =", xsi)
         
         # forward model learning
         dA = self.epsA * np.dot(xsi, y.T) + (self.A * -0.0003) # * 0.1
@@ -377,7 +377,7 @@ class LPZRos(smp_thread_ros):
             
         elif self.mode == 0: # homestastic learning
             eta = np.dot(self.A.T, xsi)
-            print "eta", self.cnt, eta.shape, eta
+            print("eta", self.cnt, eta.shape, eta)
             dC = np.dot(eta * g_prime, x.T) * self.epsC
             dh = eta * g_prime * self.epsC
             # print dC, dh
@@ -462,13 +462,13 @@ if __name__ == "__main__":
 
     # sanity check
     if not args.mode in LPZRos.modes:
-        print "invalid mode string, use one of " + str(LPZRos.modes)
+        print("invalid mode string, use one of " + str(LPZRos.modes))
         sys.exit(0)
         
     lpzros = LPZRos(args.mode, loop_time = args.loop_time)
 
     def handler(signum, frame):
-        print 'Signal handler called with signal', signum
+        print('Signal handler called with signal', signum)
         lpzros.isrunning = False
         sys.exit(0)
         # raise IOError("Couldn't open device!")

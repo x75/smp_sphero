@@ -64,7 +64,7 @@ class SpheroResLearner1D(learnerEH, smp_thread_ros):
         self.odom = Odometry()
         # motor output struct
         self.T = Twist()
-        print "Twist", self.T
+        print("Twist", self.T)
         
         self.err = np.zeros((self.cfg.len_episode, self.cfg.odim))
         # self.cfg.target = np.zeros_like(self.iosm.x)
@@ -136,11 +136,11 @@ class SpheroResLearner1D(learnerEH, smp_thread_ros):
         # self.iosm.x = self.iosm.x_raw
         # self.iosm.x[0:2,0] = 0.
         # self.iosm.x[4:,0] = 0.
-        print "self.iosm.x", self.iosm.x
+        print("self.iosm.x", self.iosm.x)
         # pass
     
     def prepare_output(self, z, zn):
-        print "z, zn", z, zn
+        print("z, zn", z, zn)
         if self.cfg.mode == "vel":
             if self.cnt_main < self.len_learning:
                 # reassign
@@ -169,7 +169,7 @@ class SpheroResLearner1D(learnerEH, smp_thread_ros):
     def controller(self):
         # self.T.angular.x = np.random.uniform(0.0, 0.1)
         now = self.cnt_main
-        print "iosm.x_raw", now, self.iosm.x_raw
+        print("iosm.x_raw", now, self.iosm.x_raw)
         # print "now", now
         if self.cfg.mode == "vel":
             if True: # self.cnt_main % 1 == 0:
@@ -178,7 +178,7 @@ class SpheroResLearner1D(learnerEH, smp_thread_ros):
                 # target_change_period = 50.
                 # target_change_period = 20.
                 target_change_period = self.target_change_period
-                print "xxxxx", self.cfg.tp_target_spec
+                print("xxxxx", self.cfg.tp_target_spec)
                 # constant target
                 if self.cfg.tp_target_spec["constant"]:
                     if self.cnt_main == 10:
@@ -191,7 +191,7 @@ class SpheroResLearner1D(learnerEH, smp_thread_ros):
                     
                 elif self.cfg.tp_target_spec["jumping"]:
                     # jumping target
-                    print range(self.cfg.len_washout+1, self.cfg.len_episode, int(target_change_period))
+                    print(list(range(self.cfg.len_washout+1, self.cfg.len_episode, int(target_change_period))))
                     if self.cnt_main in range(self.cfg.len_washout+1, self.cfg.len_episode, int(target_change_period)):
                         self.cfg.target[0,0] = 1. + np.random.uniform(-0.5, 0.5)
                         # self.cfg.target[0,0] = np.random.uniform(-1, 1)
@@ -200,19 +200,19 @@ class SpheroResLearner1D(learnerEH, smp_thread_ros):
                     # jumping target inverting sign
                     if self.cnt_main in range(self.cfg.len_washout+1, self.cfg.len_episode, int(target_change_period+1)):
                         if self.cnt_main % 2 == 0:
-                            print "even"
+                            print("even")
                             self.cfg.target[0,0] = 1. + np.random.uniform(-0.3, 0.3)
                         else:
-                            print "odd"
+                            print("odd")
                             self.cfg.target[0,0] = -1. + np.random.uniform(-0.3, 0.3)
 
                 elif self.cfg.tp_target_spec["sine"]:
                     # sinewave target fixed amp
-                    print "sinewave target"
+                    print("sinewave target")
                     # self.cfg.target[0,0] = -1.25 + 0.5 * np.cos(self.cnt_main/15.)
                     # self.cfg.target[0,0] = 1 + 0.3 * np.sin(self.cnt_main/target_change_period)
                     self.cfg.target[0,0] = 1. + 0.3 * np.sin(self.cnt_main/float(target_change_period))
-                    print "self.cfg.target", self.cfg.target
+                    print("self.cfg.target", self.cfg.target)
                 elif self.cfg.tp_target_spec["sine_sign"]:
                     # sinewave target fixed amp
                     # self.cfg.target[0,0] = -1.25 + 0.5 * np.cos(self.cnt_main/15.)
@@ -224,7 +224,7 @@ class SpheroResLearner1D(learnerEH, smp_thread_ros):
                 # sinamp = np.clip(self.cnt_main/4000., -0.2, 0.2)
                 # self.cfg.target[0,0] += sinamp * np.sin(self.cnt_main/50.)
 
-                print "target", self.cfg.target
+                print("target", self.cfg.target)
                 self.pub["target"].publish(self.cfg.target)
                 err = self.iosm.x_raw[0] - self.cfg.target #
                 # print "err", err
@@ -233,7 +233,7 @@ class SpheroResLearner1D(learnerEH, smp_thread_ros):
                 if self.cnt_main > 200:
                     # print "mse window", self.err[(self.cnt_main-200):self.cnt_main,0]
                     self.iosm.mse = np.mean(np.sqrt(-self.err[(self.cnt_main-200):self.cnt_main,0])) * np.ones_like(self.cfg.target)
-                    print "mse", self.iosm.mse
+                    print("mse", self.iosm.mse)
                 else:
                     self.iosm.mse = np.mean(np.sqrt(-self.err[0:self.cnt_main,0])) * np.ones_like(self.cfg.target)                    
                 # self.err[self.cnt_main,1] = err1
@@ -282,7 +282,7 @@ class SpheroResLearner1D(learnerEH, smp_thread_ros):
             # return (self.iosm.z, self.iosm.zn)
         elif self.cfg.mode == "PIDvel":
             self.err = self.iosm.x_raw[2:4] - np.ones((self.cfg.odim, 1)) * 0.2
-            print "self.err", self.err
+            print("self.err", self.err)
             # self.iosm.z = 10.0 * self.err
             self.iosm.z[0,0] = 0.5 * np.cos(self.cnt_main/20.)
             # self.iosm.z[1,0] = 0.5 * np.sin(self.cnt_main/10.)
@@ -294,7 +294,7 @@ class SpheroResLearner1D(learnerEH, smp_thread_ros):
             # self.noise = 0.7
             self.iosm.z[0,0] = self.noise
         elif self.cfg.mode == "bump":
-            print "bump"
+            print("bump")
             # z = np.zeros((self.cfg.odim, 1))
             if self.cnt_main in range(100, 200):
                 self.iosm.z[0,0] = 1.
@@ -314,7 +314,7 @@ class SpheroResLearner1D(learnerEH, smp_thread_ros):
                 self.cnt_inc = 1
             self.cnt += self.cnt_inc
             self.iosm.zn[0,0] = self.cnt / 100.
-            print "ramp", self.iosm.zn
+            print("ramp", self.iosm.zn)
             # self.iosm.z[0,0] = (255 + np.abs((self.cnt_main % 510) - 255)) * 0.005
             # if np.random.uniform(0, 1.) > 0.9:
             #     print "hickup"
@@ -322,7 +322,7 @@ class SpheroResLearner1D(learnerEH, smp_thread_ros):
 
         # store states for pushback: see above
 
-        print "publishing zn"
+        print("publishing zn")
         self.pub["learn_zn"].publish(self.iosm.zn)
         return(self.iosm.z, self.iosm.zn)
 
@@ -333,7 +333,7 @@ def main(args):
 
     # check datadir exists
     if not os.path.exists(args.datadir):
-        print "Datadir doesn't exist, try mkdir '%s'" % (args.datadir)
+        print("Datadir doesn't exist, try mkdir '%s'" % (args.datadir))
     
     if args.mode == "res_gen":
         # pre-generate N reservoirs for use in experiments
@@ -349,16 +349,16 @@ def main(args):
         # do we get passed a trained network for testing?
         if args.resfile != "":
             # then load it
-            print "loading reservoir from file %s" % (args.resfile)
+            print("loading reservoir from file %s" % (args.resfile))
             s.res.load(filename="%s/%s" % (args.datadir, args.resfile))
             # bend some parameters, e.g. eta and theta
-            print "overriding config for eta, theta"
+            print("overriding config for eta, theta")
             s.cfg.eta_EH = 0.
             s.cfg.res_theta = 1e-3
             s.res.set_theta(s.cfg.res_theta)
     
     def handler(signum, frame):
-        print 'Signal handler called with signal', signum
+        print('Signal handler called with signal', signum)
         s.isrunning = False
         sys.exit(0)
         # raise IOError("Couldn't open device!")
@@ -375,8 +375,8 @@ def main(args):
 
     # timestamp
     timestamp = time.strftime("%Y%m%d-%H%M%S")
-    target_str = s.cfg.tp_target_spec.keys()[s.cfg.tp_target_spec.values().index(1)]
-    print "target_str", target_str
+    target_str = list(s.cfg.tp_target_spec.keys())[list(s.cfg.tp_target_spec.values()).index(1)]
+    print("target_str", target_str)
     filename = "%s/log-learner-%s-N-%d-eta-%f-theta-%f-g-%f-target-%s" % (args.datadir,
                                                                                    timestamp,
                                            s.cfg.N, s.cfg.eta_EH, s.cfg.res_theta, s.cfg.g,
@@ -385,15 +385,15 @@ def main(args):
     s.savelogs(ts=timestamp, filename=filename)
     # save network
     if args.resfile == "":
-        target_str = s.cfg.tp_target_spec.keys()[s.cfg.tp_target_spec.values().index(1)]
-        print "target_str", target_str
+        target_str = list(s.cfg.tp_target_spec.keys())[list(s.cfg.tp_target_spec.values()).index(1)]
+        print("target_str", target_str)
         filename = "%s/reservoir-%d-%s-N-%d-eta-%f-theta-%f-g-%f-target-%s.bin" % (args.datadir,
                                                                                    1, timestamp,
                                            s.cfg.N, s.cfg.eta_EH, s.cfg.res_theta, s.cfg.g,
                                            target_str)
         s.res.save(filename=filename)
     else:
-        print "not saving network, already loaded"
+        print("not saving network, already loaded")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="reservoir smp learner for sphero")

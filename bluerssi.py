@@ -14,7 +14,7 @@ while isrunning:
     output = Popen(["hcitool", "rssi", "68:86:E7:02:1C:05"], stdout=PIPE).communicate()[0]
     rssi = float(output.split(" ")[-1])
     # print "rssi", rssi
-    print "%s %f" %(time.strftime("%s"), rssi)
+    print("%s %f" %(time.strftime("%s"), rssi))
     l.write("%s %f\n" %(time.strftime("%s"), rssi))
     l.flush()
     # a = os.system("hcitool rssi 68:86:E7:02:1C:05")

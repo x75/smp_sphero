@@ -62,7 +62,7 @@ class SpheroResLearner2D(learnerEH, smp_thread_ros):
         self.odom = Odometry()
         # motor output struct
         self.T = Twist()
-        print "Twist", self.T
+        print("Twist", self.T)
         
         self.err = np.zeros((self.cfg.len_episode, self.cfg.odim))
         # self.cfg.target = np.zeros_like(self.iosm.x)
@@ -140,12 +140,12 @@ class SpheroResLearner2D(learnerEH, smp_thread_ros):
         # self.iosm.x = self.iosm.x_raw
         # self.iosm.x[0:2,0] = 0.
         # self.iosm.x[4:,0] = 0.
-        print "iosm.x_raw", self.iosm.x_raw
-        print "iosm.x", self.iosm.x
+        print("iosm.x_raw", self.iosm.x_raw)
+        print("iosm.x", self.iosm.x)
         # pass
     
     def prepare_output(self, z, zn):
-        print "z, zn", z, zn
+        print("z, zn", z, zn)
         if self.cfg.mode == "vel":
             if self.cnt_main < self.len_learning:
                 # z_ = zn[0]
@@ -181,7 +181,7 @@ class SpheroResLearner2D(learnerEH, smp_thread_ros):
     def controller(self):
         # self.T.angular.x = np.random.uniform(0.0, 0.1)
         now = self.cnt_main
-        print "step#", now
+        print("step#", now)
         if self.cfg.mode == "vel":
             if True: # self.cnt_main % 1 == 0:
                 # sinewave target fixed amp
@@ -194,7 +194,7 @@ class SpheroResLearner2D(learnerEH, smp_thread_ros):
                 if self.phi >= (0.9 * np.pi/2.) or self.phi <= 0.1:
                     self.phi_inc = -self.phi_inc
                 self.phi = self.phi + self.phi_inc
-                print "self.phi", self.phi
+                print("self.phi", self.phi)
                 vel = 0.8 # 0.8 + np.sin(self.cnt_main / 20.)
                 self.cfg.target[0,0] = vel
                 self.cfg.target[1,0] = self.phi
@@ -238,7 +238,7 @@ class SpheroResLearner2D(learnerEH, smp_thread_ros):
                 # constant target
                 # self.target[0,0] = self.cfg.target
                 
-                print "target", self.cfg.target
+                print("target", self.cfg.target)
                 self.pub["target"].publish(self.cfg.target)
                 # err = (self.iosm.x_raw[0:self.cfg.idim:2,0] - self.cfg.target.T).T # 
                 err = np.atleast_2d(self.iosm.x[0:self.cfg.idim:2,0]).T
@@ -246,7 +246,7 @@ class SpheroResLearner2D(learnerEH, smp_thread_ros):
                 # err1 = -np.sum(np.square(err))
                 err1 = -np.square(err)
                 err2 = -np.sum(np.square(err))
-                print "err", err, err1
+                print("err", err, err1)
                 # self.err[self.cnt_main,0] = err1
                 self.err[self.cnt_main] = err1.flatten()
                 self.iosm.e = err1
@@ -283,7 +283,7 @@ class SpheroResLearner2D(learnerEH, smp_thread_ros):
                 self.iosm.x[3] = 0.
                 self.iosm.z = self.res.execute(self.iosm.x)
                 self.iosm.zn = self.res.zn
-                print "z/zn", self.iosm.z, self.iosm.zn
+                print("z/zn", self.iosm.z, self.iosm.zn)
                 # print "z/zn.shape", self.iosm.z.shape, self.iosm.zn.shape
                 # self.iosm.z = self.res.execute(err)
                 # self.iosm.z[1,0] = 0.
@@ -297,7 +297,7 @@ class SpheroResLearner2D(learnerEH, smp_thread_ros):
             # return (self.iosm.z, self.iosm.zn)
         elif self.cfg.mode == "PIDvel":
             self.err = self.iosm.x_raw[2:4] - np.ones((self.cfg.odim, 1)) * 0.2
-            print "self.err", self.err
+            print("self.err", self.err)
             # self.iosm.z = 10.0 * self.err
             self.iosm.z[0,0] = 0.5 * np.cos(self.cnt_main/20.)
             # self.iosm.z[1,0] = 0.5 * np.sin(self.cnt_main/10.)
@@ -309,7 +309,7 @@ class SpheroResLearner2D(learnerEH, smp_thread_ros):
             # self.noise = 0.7
             self.iosm.z[0,0] = self.noise
         elif self.cfg.mode == "bump":
-            print "bump"
+            print("bump")
             # z = np.zeros((self.cfg.odim, 1))
             if self.cnt_main in range(100, 200):
                 self.iosm.z[0,0] = 1.
@@ -323,10 +323,10 @@ class SpheroResLearner2D(learnerEH, smp_thread_ros):
                 self.iosm.z[0,0] = 0.
                 # self.iosm.z[1,0] = 0.
         elif self.cfg.mode == "ramp":
-            print "ramp"
+            print("ramp")
             self.iosm.z[0,0] = (250 - np.abs((self.cnt_main % 500) - 250)) * 0.005
             if np.random.uniform(0, 1.) > 0.9:
-                print "hickup"
+                print("hickup")
                 time.sleep(0.5)
 
         # store states for pushback: see above
@@ -342,7 +342,7 @@ def main(args):
 
     # check datadir exists
     if not os.path.exists(args.datadir):
-        print "Datadir doesn't exist, try mkdir '%s'" % (args.datadir)
+        print("Datadir doesn't exist, try mkdir '%s'" % (args.datadir))
     
     if args.mode == "res_gen":
         # pre-generate N reservoirs for use in experiments
@@ -358,16 +358,16 @@ def main(args):
         # do we get passed a trained network for testing?
         if args.resfile != "":
             # then load it
-            print "loading reservoir from file %s" % (args.resfile)
+            print("loading reservoir from file %s" % (args.resfile))
             s.res.load(filename="%s/%s" % (args.datadir, args.resfile))
              # bend some parameters, e.g. eta and theta
-            print "overriding config for eta, theta"
+            print("overriding config for eta, theta")
             s.cfg.eta_EH = 0.
             s.cfg.theta = 1e-3
             s.res.set_theta(s.cfg.theta)
    
     def handler(signum, frame):
-        print 'Signal handler called with signal', signum
+        print('Signal handler called with signal', signum)
         s.isrunning = False
         sys.exit(0)
         # raise IOError("Couldn't open device!")

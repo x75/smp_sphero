@@ -23,8 +23,8 @@ class SpheroResLearner1DAnalyze(object):
         try:
             for logfile in self.logfiles:
                 self.X.append(np.load(logfile))
-        except Exception, e:
-            print e
+        except Exception as e:
+            print(e)
 
     def plot_x_raw(self):
         for i, logdata in enumerate(self.X):
@@ -66,8 +66,8 @@ class SpheroResLearner1DAnalyze(object):
             pl.plot(logdata["x"][sl])
             try:
                 pl.plot(logdata["t"][sl], "-o")
-            except Exception, e:
-                print "fail", e
+            except Exception as e:
+                print("fail", e)
 
             pl.gca().set_xticklabels([])
                 
@@ -82,8 +82,8 @@ class SpheroResLearner1DAnalyze(object):
             pl.title("err")
             try:
                 pl.plot(np.abs(logdata["e"][sl]))
-            except Exception, e:
-                print "fail", e
+            except Exception as e:
+                print("fail", e)
             pl.gca().set_yscale("log")
             # pl.gca().set_xscale("log")
             pl.gca().set_xticklabels([])
@@ -91,9 +91,9 @@ class SpheroResLearner1DAnalyze(object):
             pl.subplot(515)
             pl.title("w")
             w_ = np.linalg.norm(logdata["w"], axis=1)[sl]
-            print "w_.shape", w_.shape
+            print("w_.shape", w_.shape)
             dw = np.diff(logdata["w"], axis=0)
-            print "dw.shape", dw.shape
+            print("dw.shape", dw.shape)
             dw_ = np.linalg.norm(dw[sl], axis=1)
             pl.plot(dw_, "-o")
             pl.xlabel("t [steps]")
@@ -153,9 +153,9 @@ class SpheroResLearner1DAnalyze(object):
             # pl.plot(logdata["zn_lp"][sl])
             # for j in spikes:
             #     pl.axvline(j, 0.70, 0.85, color="k", linestyle="--", lw=2)
-            print x.shape, zn.shape
+            print(x.shape, zn.shape)
             xzcorr = np.correlate(zn[:,0], x, "full")
-            print "x-z corr", xzcorr
+            print("x-z corr", xzcorr)
             # pl.plot(xzcorr)
             # pl.subplot(514)
             # pl.title("err")
@@ -168,9 +168,9 @@ class SpheroResLearner1DAnalyze(object):
             # pl.subplot(111)
             # pl.title("w")
             w_ = np.linalg.norm(logdata["w"], axis=1)[sl]
-            print "w_.shape", w_.shape
+            print("w_.shape", w_.shape)
             dw = np.diff(logdata["w"], axis=0)
-            print "dw.shape", dw.shape
+            print("dw.shape", dw.shape)
             dw_ = np.linalg.norm(dw[sl], axis=1)
             # dw_ = np.roll(dw_, -3)
             pl.plot(dw_ * 100. - 4., "-o", lw=2, label="|dW|")
@@ -182,7 +182,7 @@ class SpheroResLearner1DAnalyze(object):
                 pl.plot([j+3, j+3], [x[j+3]+0.3, -4.], color="k", linestyle="--", lw=2)
                 pl.axvline(j+3, 0.05, 0.55, color="k", linestyle="--", lw=2)
             zwcorr = np.correlate(zn[:,0], dw_[:,0], "full")
-            print "z-w corr", zwcorr
+            print("z-w corr", zwcorr)
             pl.text(16, -0.5, "$k$-delay")
             # pl.plot(zwcorr)
             # pl.subplot(511)
@@ -217,9 +217,9 @@ class SpheroResLearner1DAnalyze(object):
     def plot_w(self):
         for i, logdata in enumerate(self.X):
             w = logdata["w"]
-            print w.shape
+            print(w.shape)
             w_ = np.sqrt(np.sum(np.square(w), axis=1))
-            print w_.shape
+            print(w_.shape)
             pl.plot(w_)
         pl.show()
 
@@ -232,13 +232,13 @@ class SpheroResLearner1DAnalyze(object):
         pl.show()
 
     def plot_xcorr(self):
-        print self.X["x_raw"].shape
-        print self.X["z"].shape
+        print(self.X["x_raw"].shape)
+        print(self.X["z"].shape)
         # tsl = slice(40, 290)
         tsl = slice(None, None)
         x_raw = self.X["x_raw"][tsl]
         z = self.X["z"][tsl]
-        print x_raw[:,0]
+        print(x_raw[:,0])
         xcorr = np.correlate(z[:,0], x_raw[:,0], mode="full")
         pl.subplot(211)
         # pl.plot(np.roll(x_raw[:,0], -3))
@@ -253,7 +253,7 @@ class SpheroResLearner1DAnalyze(object):
 
     def plot_err(self):
         err = np.zeros_like(self.X[0]["e"])
-        print err
+        print(err)
         for i, logdata in enumerate(self.X):
             err += logdata["e"]
         pl.subplot(111)
@@ -275,11 +275,11 @@ class SpheroResLearner1DAnalyze(object):
     def plot_err_episodes(self):
         washout = 10
         err = np.zeros((49, 1))
-        print err
+        print(err)
         for i, logdata in enumerate(self.X):
             for j in range(49):
                 endofepi = logdata["e"][j*101+50:((j+1)*101)]
-                print endofepi
+                print(endofepi)
                 err[j,0] += np.mean(endofepi)
         pl.subplot(111)
         # pl.title("error")
@@ -307,12 +307,12 @@ class SpheroResLearner1DAnalyze(object):
             target_change_period = 100 # 2D
             target_change_onset = 12
         err = [np.zeros((target_change_period, ldim)) for i in range(len(self.X))]
-        print "len(X)", len(self.X)
+        print("len(X)", len(self.X))
         for i, logdata in enumerate(self.X):
             for j in range(target_change_onset,
                            len(logdata["e"])-(target_change_period-target_change_onset),
                            target_change_period):
-                print "j", j
+                print("j", j)
                 lerr = logdata["e"][j:(j+target_change_period)]
                 # pl.plot(lerr)
                 # pl.show()
@@ -333,7 +333,7 @@ class SpheroResLearner1DAnalyze(object):
             sls = 450
             sle = 950
         sl = slice(sls, sle)
-        t = range(sls, sle)
+        t = list(range(sls, sle))
         # for 1D
         if ldim == 1:
             pl.plot(t, self.X[i]["t"][sl,0], "k-", lw=0.5, label="target")
@@ -364,7 +364,7 @@ class SpheroResLearner1DAnalyze(object):
         pl.subplot(212)
         pl.title("Average error on setpoint change")
         for i in range(len(self.X)):
-            print "i", i, cols[i], err[i].shape
+            print("i", i, cols[i], err[i].shape)
             pl.plot(err[i][:,0], cols[i] + "-", label=labs[i], lw=2)
 
         # legend outside
@@ -424,7 +424,7 @@ class SpheroResLearner1DAnalyze(object):
                 
     def print_keys(self):
         for i,logdata in enumerate(self.X):
-            print "X.keys()", logdata.keys()
+            print("X.keys()", list(logdata.keys()))
 
 def main(args):
     a = SpheroResLearner1DAnalyze(args)
@@ -467,5 +467,5 @@ if __name__ == "__main__":
     parser.add_argument("--no-saveplot", dest="saveplot", action="store_false")
 
     args = parser.parse_args()
-    print args.logfiles
+    print(args.logfiles)
     main(args)

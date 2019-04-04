@@ -1,4 +1,4 @@
-import cPickle as pickle
+import pickle as pickle
 import warnings
 import time, argparse, sys, os
 import numpy as np
@@ -18,7 +18,7 @@ class Analyzer():
             files = [f for f in self.all_files(pickleFolder)
                 if f.endswith('.pickle') and 'recording' in f]
             self.filename = files[np.random.randint(len(files))]
-            print "random File: %s" % (self.filename)
+            print("random File: %s" % (self.filename))
         else:
             self.filename = self.args.filename
 
@@ -67,7 +67,7 @@ class Analyzer():
 
 
         correlationsGlobal = np.cov(self.motorCommands.T)
-        print correlationsGlobal
+        print(correlationsGlobal)
 
         for i in range(len(self.motorCommands) - self.windowsize):
             # use only the latest step of the buffer but all motor commands
@@ -122,7 +122,7 @@ class Analyzer():
         plt.rc('text', usetex=True)
         plt.rc('font', family='serif')
 
-        print np.average(allAverageSquaredCorrelations[:,0])
+        print(np.average(allAverageSquaredCorrelations[:,0]))
 
 
         for j in range(corrCombinations):
@@ -171,7 +171,7 @@ class Analyzer():
         #self.sensorValues = self.sensorValues[:,3:]
 
         # motoremb = self.motorCommands[:testDataLimit]
-        print(motoremb.shape)
+        print((motoremb.shape))
         self.trainingData={"motor":motoremb, "sensor":self.sensorValues[self.embsize:testDataLimit]}
         self.testData={"motor":motorembtest, "sensor":self.sensorValues[testDataLimit+self.embsize:]}
 
@@ -204,14 +204,14 @@ class Analyzer():
 
         # find the absolute sum of the coeffitients corresponding to the lag coefs[max] is zero lag
         coefs = np.sum(np.sum(np.abs(regr.coef_), axis = 0).reshape((4, self.embsize)), axis = 0)
-        print coefs
-        print np.argmax(coefs)
+        print(coefs)
+        print(np.argmax(coefs))
 
         # calculate mean squared error of the test data
         mse = np.mean((predTest - self.testData["sensor"]) ** 2)
 
         #print("trainingError: %.2f" %np.mean((regr.predict(trainingData["motor"]) - trainingData["sensor"]) ** 2))
-        print("Mean squared error: %.2f, s = %s" % (mse, np.var(self.testData["sensor"], axis = 0)))
+        print(("Mean squared error: %.2f, s = %s" % (mse, np.var(self.testData["sensor"], axis = 0))))
 
         # plot the coefficient sum
         plt.plot(coefs, label="coefefs over lag")
@@ -264,7 +264,7 @@ class Analyzer():
 
         # go through the data until the end
         plots = int(self.timesteps / points_per_plot)
-        print "Warning: %d points not shown" % (self.timesteps % points_per_plot)
+        print("Warning: %d points not shown" % (self.timesteps % points_per_plot))
 
         for part in range(0,plots):
             partS = part * points_per_plot
@@ -294,7 +294,7 @@ class Analyzer():
         self.numsen = sensors.shape[1]
         s = sensors
 
-        print sensors.shape
+        print(sensors.shape)
 
         import scipy.signal as sig
 
@@ -337,7 +337,7 @@ class Analyzer():
         kmeans.fit(allSpecs)
         ax3 = fig.add_subplot(gs[2,1])
 
-        ax3.scatter(range(len(allSpecs)), kmeans.predict(allSpecs),c=np.linspace(0,255,35))
+        ax3.scatter(list(range(len(allSpecs))), kmeans.predict(allSpecs),c=np.linspace(0,255,35))
 
         from sklearn import decomposition
 
@@ -346,10 +346,10 @@ class Analyzer():
         ax4 = fig.add_subplot(gs[2,2])
         ax4.scatter( pca.transform(allSpecs)[:,0], pca.transform(allSpecs)[:,1], c=np.linspace(0,255,35))
 
-        print(allSpecs.shape)
+        print((allSpecs.shape))
         plt.show()
 
-        print sensors.shape
+        print(sensors.shape)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="lpzrobots ROS controller: test homeostatic/kinetic learning")
@@ -371,8 +371,8 @@ if __name__ == "__main__":
     if(args.filename == None and args.randomFile == False):
         print("Please select file with\n-f ../foo.pickle or -r for random file\n")
 
-    if(args.mode in function_dict.keys()):
-        print "Mode %s selected...\n" % (args.mode)
+    if(args.mode in list(function_dict.keys())):
+        print("Mode %s selected...\n" % (args.mode))
 
         analyzer = Analyzer(args)
         function_dict[args.mode](analyzer)
@@ -380,4 +380,4 @@ if __name__ == "__main__":
         if args.mode == None:
             args.mode=""
 
-        print("Mode '" + args.mode + "' not found,\nplease select a mode with -m " + str(function_dict.keys()))
+        print(("Mode '" + args.mode + "' not found,\nplease select a mode with -m " + str(list(function_dict.keys()))))
