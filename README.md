@@ -1,184 +1,92 @@
-
-
-# Sensorimotor learning with the Sphero robot
+Sensorimotor learning with the Sphero robot
+===========================================
 
 05/2014 - 2017, Oswald Berthold
 
-Python code from the Closed-loop sphero behaviour paper <sup><a id="fnr.1" class="footref" href="#fn.1">1</a></sup>.
+Python code from the Closed-loop sphero behaviour paper [1].
 
+Dependencies
+------------
 
-## Preparation
+This is built on top of the following stacks, make sure to have that installed (tested only on Ubuntu)
 
-This is built on top of the following stacks, make sure to have that
-installed (tested only on Ubuntu) 
-
--   python-numpy, python-bluetooth, &#x2026; Use apt-get / distro mechanism
+-   python-numpy, python-bluetooth, ... Use apt-get / distro mechanism
 -   ROS base install, use apt-get
--   sphero\_ros driver from <sup><a id="fnr.2" class="footref" href="#fn.2">2</a></sup>, install via $ROSDISTRO\_workspace
-    catkin\_make. See the ROS wiki how to set up a catkin workspace.
--   get smp\_msgs <sup><a id="fnr.3" class="footref" href="#fn.3">3</a></sup> and install it into your ROS workspace
--   get smp\_base from <https://github.com/x75/smp_base>, then do
-
-    export PYTHONPATH=../smp_base:$PYTHONPATH
+-   sphero\_ros driver from [2], install via $ROSDISTRO\_workspace catkin\_make. See the ROS wiki how to set up a catkin workspace.
+-   get smp\_msgs [3] and install it into your ROS workspace
+-   get smp\_base from <https://github.com/x75/smp_base>, then do `export PYTHONPATH=../smp_base:$PYTHONPATH`
+-   pybluez, the python bluetooth `pip install pybluez`
 
 This is the launch sequence for the sphero ROS node
 
-    roscore    
-    python src/sphero_ros/sphero_node/nodes/sphero.py
+``` example
+roscore    
+python src/sphero_ros/sphero_node/nodes/sphero.py 
+```
 
-\`sphero.py\` accepts arguments such as  sensorimotor loop frequency
-and also a BT target address to connect directly to a given device, if
-you know it. The experiments are tuned to 20 Hz sampling rate so we
-need to do
+\`sphero.py\` accepts arguments such as sensorimotor loop frequency and also a BT target address to connect directly to a given device, if you know it. The experiments are tuned to 20 Hz sampling rate so we need to do
 
-    python src/sphero_ros/sphero_node/nodes/sphero.py --freq 20
+``` example
+python src/sphero_ros/sphero_node/nodes/sphero.py --freq 20
+```
 
 or
 
-    python src/sphero_ros/sphero_node/nodes/sphero.py --freq 20 --target_addr sp:he:ro:sa:dd:re
+``` example
+python src/sphero_ros/sphero_node/nodes/sphero.py --freq 20 --target_addr sp:he:ro:sa:dd:re
+```
 
+Scripts
+-------
 
-## Scripts
+When roscore and sphero.py are up and running, you can run ROS clients like e.g. sphero\_joystick.py
 
-When roscore and sphero.py are up and running, you can run ROS clients
-like e.g. sphero\_joystick.py 
-
-    rosrun joy joy_node
+``` example
+rosrun joy joy_node
+```
 
 A few of the utils/tests to check the basic communication is working
 
-<table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
-
-
-<colgroup>
-<col  class="org-left" />
-
-<col  class="org-left" />
-</colgroup>
-<thead>
-<tr>
-<th scope="col" class="org-left">**Utils**</th>
-<th scope="col" class="org-left">&#xa0;</th>
-</tr>
-</thead>
-
-<tbody>
-<tr>
-<td class="org-left">bluerssi.py</td>
-<td class="org-left">Log BT rssi values</td>
-</tr>
-
-
-<tr>
-<td class="org-left">sphero\_colors.py</td>
-<td class="org-left">Basic color actuation with ros</td>
-</tr>
-
-
-<tr>
-<td class="org-left">sphero\_joystick.py</td>
-<td class="org-left">Control sphero via ros joy\_node</td>
-</tr>
-
-
-<tr>
-<td class="org-left">sphero\_raw.py</td>
-<td class="org-left">Minimal test of raw communication protocol</td>
-</tr>
-
-
-<tr>
-<td class="org-left">sphero\_simple\_openloop.py</td>
-<td class="org-left">Simple open-loop command test</td>
-</tr>
-
-
-<tr>
-<td class="org-left">sphero\_test.py</td>
-<td class="org-left">Another minimal test</td>
-</tr>
-</tbody>
-</table>
-
+| **Utils**                   |                                            |
+|-----------------------------|--------------------------------------------|
+| bluerssi.py                 | Log BT rssi values                         |
+| sphero\_colors.py           | Basic color actuation with ros             |
+| sphero\_joystick.py         | Control sphero via ros joy\_node           |
+| sphero\_raw.py              | Minimal test of raw communication protocol |
+| sphero\_simple\_openloop.py | Simple open-loop command test              |
+| sphero\_test.py             | Another minimal test                       |
 
 ### Learning
 
-When that works, you could try the learning experiments, just to
-disentangle possible sources of errors.
+When that works, you could try the learning experiments, just to disentangle possible sources of errors.
 
-<table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
+| **Experiments**                      |                                              |
+|--------------------------------------|----------------------------------------------|
+| sphero\_res\_learner\_1D.py          |                                              |
+| sphero\_res\_learner\_2D\_polar.py   |                                              |
+| sphero\_res\_learner\_2D.py          |                                              |
+| sphero\_res\_learner\_1D\_analyze.py |                                              |
+| sphero\_data\_recorder.py            |                                              |
+| hk2.py                               | Homeostasis and homeokinesis from lpzrobots, |
+|                                      | Der & Martius, 201, Playful machines         |
 
+``` example
+python sphero_res_learner_1D.py --config default.cfg
+```
 
-<colgroup>
-<col  class="org-left" />
-
-<col  class="org-left" />
-</colgroup>
-<thead>
-<tr>
-<th scope="col" class="org-left">**Experiments**</th>
-<th scope="col" class="org-left">&#xa0;</th>
-</tr>
-</thead>
-
-<tbody>
-<tr>
-<td class="org-left">sphero\_res\_learner\_1D.py</td>
-<td class="org-left">&#xa0;</td>
-</tr>
-
-
-<tr>
-<td class="org-left">sphero\_res\_learner\_2D\_polar.py</td>
-<td class="org-left">&#xa0;</td>
-</tr>
-
-
-<tr>
-<td class="org-left">sphero\_res\_learner\_2D.py</td>
-<td class="org-left">&#xa0;</td>
-</tr>
-
-
-<tr>
-<td class="org-left">sphero\_res\_learner\_1D\_analyze.py</td>
-<td class="org-left">&#xa0;</td>
-</tr>
-
-
-<tr>
-<td class="org-left">sphero\_data\_recorder.py</td>
-<td class="org-left">&#xa0;</td>
-</tr>
-
-
-<tr>
-<td class="org-left">hk2.py</td>
-<td class="org-left">Homeostasis and homeokinesis from lpzrobots,</td>
-</tr>
-
-
-<tr>
-<td class="org-left">&#xa0;</td>
-<td class="org-left">Der & Martius, 201, Playful machines</td>
-</tr>
-</tbody>
-</table>
-
-    python sphero_res_learner_1D.py --config default.cfg
-
-You can copy the default.cfg and start editing it to play around with
-different targets and parameters.
+You can copy the default.cfg and start editing it to play around with different targets and parameters.
 
 Or try the homeokinesis example and play with self.\*\_gain parameters (in the code)
 
-    python hk2.py --mode hk --loop_time 0.05
+``` example
+python hk2.py --mode hk --loop_time 0.05
+```
 
+Footnotes
+=========
 
-# Footnotes
+[1] Berthold and Hafner, 2015, Closed-loop acquisition of behaviour on the Sphero robot, <https://mitpress.mit.edu/sites/default/files/titles/content/ecal2015/ch084.html>
 
-<sup><a id="fn.1" href="#fnr.1">1</a></sup> Berthold and Hafner, 2015, Closed-loop acquisition of behaviour on the Sphero robot, <https://mitpress.mit.edu/sites/default/files/titles/content/ecal2015/ch084.html>
+[2] <https://github.com/x75/sphero_ros>
 
-<sup><a id="fn.2" href="#fnr.2">2</a></sup> <https://github.com/x75/sphero_ros>
-
-<sup><a id="fn.3" href="#fnr.3">3</a></sup> <https://github.com/x75/smp_msgs>
+[3] <https://github.com/x75/smp_msgs>

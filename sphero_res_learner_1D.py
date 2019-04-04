@@ -1,10 +1,12 @@
 #!/usr/bin/env python
 """self-organizing behaviour: smp / inverse model learning for sphero, 1-dimensional"""
 
-import rospy
-import signal
-import time, sys, argparse, os
+import signal, time, sys, argparse, os
 
+import numpy as np
+import numpy.linalg as LA
+
+import rospy
 from std_msgs.msg import Float32, Float32MultiArray, ColorRGBA
 from sensor_msgs.msg import Imu
 from nav_msgs.msg import Odometry
@@ -20,9 +22,6 @@ import tf
 from reservoirs import Reservoir
 from learners import learnerEH
 from smp_thread import smp_thread_ros
-
-import numpy as np
-import numpy.linalg as LA
 
 class SpheroResLearner1D(learnerEH, smp_thread_ros):
     """Sphero experiments"""
